@@ -1,0 +1,214 @@
+/* ---------- Reset / base ---------- */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: #0d0d0d;
+    color: #f2f2f2;
+}
+
+/* ---------- Filler sections just to give scroll room ---------- */
+.hero {
+    height: 60vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: #888;
+}
+
+.hero--end {
+    height: 80vh;
+}
+
+.hint {
+    text-align: center;
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #777;
+    padding-bottom: 2rem;
+}
+
+/* =========================================================
+   THE STACK
+   Each .stack__item is a TALL wrapper (scroll distance).
+   Inside it, .card is sticky and pins to the viewport
+   while its wrapper is passing through.
+   ========================================================= */
+
+.stack {
+    position: relative;
+    max-width: 420px;
+    margin: 0 auto;
+    padding: 0 1.5rem;
+}
+
+.stack__item {
+    height: 100vh;
+    /* how long this card "owns" the scroll */
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+/* Stack items overlap the next one by NOT taking full height on the
+   sticky element itself — the sticky card holds shorter than its
+   wrapper, so the following wrapper's top can slide up and over it.
+
+   FIX #5: Changed from bare -40vh to clamp() to prevent excessive
+   overlap on tall viewports (1440px+) and insufficient separation
+   on very short viewports (< 600px). Visual appearance on typical
+   phone heights (667px–900px) is unchanged. */
+.stack__item:not(:last-child) {
+    margin-bottom: clamp(-280px, -40vh, -120px);
+}
+
+.card {
+    position: sticky;
+    top: 10vh;
+    /* pin offset from top of viewport */
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    /* portrait */
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+    transform-origin: top center;
+    background: white;
+    /* FIX #2: Merged from orphaned second .card block at end of file.
+       White background is visible on transparent-content cards and
+       on the initial paint frame before images load. */
+
+    /* FIX #6: Base transform establishes composite layer immediately
+       at paint time so will-change promotion doesn't defer to first
+       animation frame, preventing first-transition jank. */
+    transform: translateZ(0);
+
+    /* FIX #7: isolation:isolate makes the stacking context created by
+       .card--recede's filter property explicit and deterministic,
+       preventing unexpected z-index reordering of children
+       (e.g. .card__caption) across browsers. */
+    isolation: isolate;
+
+    will-change: transform;
+
+    /* FIX #1: transition moved to prefers-reduced-motion block below.
+       Reduced-motion users get instant state changes instead of
+       animated transitions. */
+}
+
+/* FIX #1 & #1(recede): All motion — transitions on .card and the
+   recede transform/filter — gated behind prefers-reduced-motion.
+   Users who opt out of motion see instant state changes.
+   will-change: filter added here only (where animation is active)
+   to avoid promoting a paint-heavy property when unused. */
+@media (prefers-reduced-motion: no-preference) {
+    .card {
+        /* animated by JS toggling .card--recede */
+        transition: transform 0.15s linear, filter 0.15s linear, opacity 0.15s linear;
+    }
+
+    /* Applied via IntersectionObserver when the NEXT card starts
+       covering this one — creates the "shrinking into the stack" look.
+       NOTE: filter:brightness() triggers a paint (not compositor-only).
+       This is a known performance trade-off for the visual effect.
+       Documented here — not changed to avoid altering appearance. */
+    .card.card--recede {
+        transform: scale(0.9) translateY(-10px);
+        filter: brightness(0.6);
+    }
+}
+
+/* FIX #1 (reduced-motion fallback): Recede state is still applied
+   visually for reduced-motion users, but without animated transition. */
+@media (prefers-reduced-motion: reduce) {
+    .card.card--recede {
+        transform: scale(0.9) translateY(-10px);
+        filter: brightness(0.6);
+    }
+}
+
+/* FIX #3: .card__img and .card img are intentional duplicates covering
+   two HTML patterns:
+     1. <img class="card__img"> — matched by .card__img (specificity 0-1-0)
+     2. <img> inside .card without the class — matched by .card img (0-0-2)
+   MAINTENANCE PAIR: if you update one, update the other identically.
+   Do not remove either without auditing which HTML pattern your
+   templates use.
+
+   FIX #23 — THESE TWO RULESETS ARE NOT CURRENTLY IDENTICAL. Checked
+   property-by-property against each other in this pass:
+     .card__img has  pointer-events: none;  and  user-select: none;
+     .card img  has NEITHER of those two declarations.
+   Everything else (width, height, object-fit, display) already matches.
+   This is exactly the drift the "MAINTENANCE PAIR" comment above warns
+   about, and it's already happened — whether on purpose or by omission
+   isn't something this file can determine on its own.
+
+   NOT auto-merged into a single `.card__img, .card img { ... }` selector
+   in this pass, because doing so requires picking a side, and picking
+   wrong is a real behavior change: adding pointer-events:none/user-
+   select:none to the .card img pattern would silently disable right-
+   click-save and text selection on any unclassed <img> inside .card,
+   which nothing in this file's history says is intended for that pattern
+   specifically. That's a decision for whoever owns the HTML templates
+   (do .card img images need the same interaction-blocking as .card__img
+   ones, or was the omission deliberate — e.g. because .card img covers a
+   pattern where users SHOULD be able to select/save?), not something to
+   guess silently in a refactor.
+
+   Until that decision is made, treat this as unresolved drift, not a
+   stable maintenance pair: DO NOT edit either ruleset without updating
+   BOTH the property list AND this comment, and if a build step or lint
+   rule can assert both selectors resolve to the same declaration block,
+   add it — hand-sync alone has already failed to keep this pair identical
+   once, silently, with nothing catching it until now. */
+.card__img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    pointer-events: none;
+    user-select: none;
+}
+
+.card img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+}
+
+.card__caption {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 1.25rem;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.75), transparent);
+}
+
+.card__caption h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+/* ---------- Small screens ---------- */
+/* FIX #4: Corrected from max-width: 200px (no real device target —
+   narrower than the smallest folded phone at 280px) to 480px, which
+   covers folded phones (280px), small phones (360px), and narrow
+   mobile viewports. Rule body is unchanged. */
+@media (max-width: 480px) {
+    .stack {
+        max-width: 88vw;
+    }
+
+    .card {
+        top: 6vh;
+    }
+}

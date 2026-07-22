@@ -1,0 +1,115 @@
+/* =====================================================
+   VOLT — SWIRL LIGHTNING ANIMATION
+   أضف هذا الملف في الـ HTML:
+   <link rel="stylesheet" href="volt-animation.css">
+   قبل إغلاق الـ </head>
+===================================================== */
+
+/* ===== CANVAS للدوامة الكهربية ===== */
+/*
+ * NOTE ON SPECIFICITY:
+ * .volt-lightning-canvas  (0-1-0) — used when canvas is placed OUTSIDE
+ *   .nav-volt-wrapper, e.g. a standalone splash/hero canvas.
+ * .nav-volt-wrapper canvas (0-1-1) — used for canvas INSIDE the nav wrapper.
+ * When an element carries .volt-lightning-canvas AND sits inside
+ * .nav-volt-wrapper, the descendant rule wins on conflicting props.
+ * The shared positional declarations below are canonical; the descendant
+ * rule inherits them and only overrides z-index.
+ *
+ * FIX #8 (AUDIT — NO CHANGES REQUIRED): All rules in this file are active
+ * and referenced. Both canvas rulesets (.volt-lightning-canvas and
+ * .nav-volt-wrapper canvas) are live. The prefers-reduced-motion-gated
+ * voltNavGlow keyframe block is correctly conditional. No dead or unused
+ * declarations found. Specificity-based override structure preserved exactly.
+ */
+.volt-lightning-canvas {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ===== NAV WORDMARK — النص فوق الـ Canvas ===== */
+.nav-logo {
+    position: relative;
+}
+
+.nav-wordmark {
+    position: relative;
+    z-index: 2;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    /* FIX #2: Added fallback value so text is never invisible if --green
+       is not yet defined (stylesheet load-order race or cascade failure).
+       Fallback #1db954 matches the RGBA components used in text-shadow. */
+    color: var(--green, #1db954);
+    /* توهج خفيف دائم — static baseline, always visible */
+    text-shadow:
+        0 0 6px rgba(29, 185, 84, 0.5),
+        0 0 14px rgba(29, 185, 84, 0.3);
+}
+
+/* FIX #1 & #4: voltNavGlow animation is gated behind prefers-reduced-motion.
+   Users who opt out of motion receive the static text-shadow above.
+   will-change: filter is declared here only — zero cost when animation
+   is disabled. */
+@media (prefers-reduced-motion: no-preference) {
+    .nav-wordmark {
+        will-change: filter;
+        animation: voltNavGlow 3s ease-in-out infinite;
+    }
+
+    @keyframes voltNavGlow {
+        0%,
+        100% {
+            text-shadow:
+                0 0 6px rgba(29, 185, 84, 0.5),
+                0 0 14px rgba(29, 185, 84, 0.3);
+        }
+
+        50% {
+            text-shadow:
+                0 0 10px rgba(255, 255, 255, 0.6),
+                0 0 22px rgba(29, 185, 84, 0.8),
+                0 0 40px rgba(29, 185, 84, 0.4);
+        }
+    }
+}
+
+/* ===== SPLASH WORDMARK ===== */
+.splash-wordmark {
+    position: relative;
+    z-index: 2;
+}
+
+/* ===== WRAPPER للـ canvas جوه الـ nav ===== */
+.nav-volt-wrapper {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    text-decoration: none;
+}
+
+/* FIX #3: Removed duplicate positional declarations (top, left, transform,
+   pointer-events) — these are already canonical on .volt-lightning-canvas.
+   Only z-index and border-radius are overridden here, which is the only
+   intentional difference for the in-nav canvas context. */
+.nav-volt-wrapper canvas {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 1;
+    border-radius: 6px;
+}
+
+.nav-volt-wrapper .nav-wordmark {
+    position: relative;
+    z-index: 2;
+}

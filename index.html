@@ -1,0 +1,1380 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+    <!-- FIX #A: Removed stray </script> closing tag that appeared before any
+         <script> was opened — a dead syntax error in the <head>. -->
+    <script type="module" src="config.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="new-style.css" />
+    <title>VOLT | متجر الإلكترونيات والقطع الذكية</title>
+    <link rel="icon"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231db954' d='M13 2L3 14h9l-1 8 10-12h-9z'/%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Rajdhani:wght@500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- ⚡ VOLT Lightning Animation -->
+    <link rel="stylesheet" href="volt-animation.css">
+</head>
+
+<body>
+
+    <!-- SPLASH -->
+    <div id="splash">
+        <div class="splash-logo">
+
+            <svg class="bolt-svg" width="54" height="54" viewBox="0 0 24 24" fill="none">
+                <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill="#1db954" stroke="#15a347" stroke-width="2"
+                    stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+            <!-- ⚡ Splash VOLT wrapper مع canvas للدوامة -->
+            <div style="position:relative; display:inline-block;">
+                <canvas id="splash-lightning-canvas"
+                    style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; z-index:1;"></canvas>
+                <span class="splash-wordmark" style="position:relative; z-index:2;"></span>
+            </div>
+        </div>
+        <p class="splash-tagline">FUTURE OF ELECTRONICS</p>
+        <div class="splash-bar">
+            <div class="splash-progress"></div>
+        </div>
+    </div>
+
+    <!-- NAV -->
+    <nav>
+        <!-- ⚡ Nav VOLT wrapper مع canvas للدوامة -->
+        <a href="#" class="nav-logo nav-volt-wrapper" id="nav-logo-link">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+                <path d="M13 2L3 14H12L11 22L21 10H12L13 2Z" fill="#1db954" />
+            </svg>
+            <canvas id="nav-lightning-canvas"></canvas>
+            <span class="nav-wordmark">VOLT</span>
+        </a>
+        <ul class="nav-links">
+            <li><a href="#">الرئيسية</a></li>
+            <li><a href="#products">المنتجات</a></li>
+            <li><a href="#projects">المشاريع الهندسية</a></li>
+            <li><a href="https://wa.me/201111884419" target="_blank">تواصل معنا</a></li>
+        </ul>
+        <div id="nav-auth-area" style="display:flex;gap:10px;align-items:center;">
+            <!-- ⚡ TASK MANAGEMENT BUTTON — standalone, independent of admin login -->
+            <button id="taskMgmtBtn" class="nav-cart" data-testid="task-mgmt-btn"
+                style="background:transparent;color:var(--amber);border:1.5px solid var(--amber);">📋 إدارة
+                المهام</button>
+            <button id="loginBtn" class="nav-cart" data-testid="login-btn"
+                style="background:transparent;color:var(--green);border:1.5px solid var(--green);">تسجيل الدخول</button>
+            <button id="registerBtn" class="nav-cart" data-testid="register-btn"
+                style="background:transparent;color:var(--muted);border:1.5px solid var(--border);">إنشاء حساب</button>
+            <button class="nav-cart" id="cartBtn" data-testid="cart-btn">السلة <span class="cart-badge" id="cartCount"
+                    data-testid="cart-count">0</span></button>
+        </div>
+    </nav>
+
+    <!-- HERO -->
+    <header class="hero">
+        <canvas id="hero-lightning"></canvas>
+        <p class="hero-eyebrow">مستقبل الإلكترونيات بين يديك</p>
+        <h1 class="hero-title"><span id="typewriter"></span></h1>
+        <p class="hero-sub">متجرك الأول لقطع الغيار الإلكترونية، ألواح الآردوينو، والمستشعرات الذكية لتنفيذ مشاريعك
+            البرمجية والهندسية بأعلى كفاءة.</p>
+        <div class="hero-search">
+            <input type="text" id="searchInput" data-testid="search-input"
+                placeholder="ابحث عن مستشعر، آردوينو، أو قطعة إلكترونية...">
+            <button id="searchBtn" data-testid="search-btn">بحث</button>
+        </div>
+    </header>
+
+    <!-- FILTERS -->
+    <div class="filter-bar">
+        <button class="filter-btn active" data-category="all" data-testid="filter-btn-all">الكل</button>
+        <button class="filter-btn" data-category="arduino" data-testid="filter-btn-arduino">آردوينو ومتحكمات</button>
+        <button class="filter-btn" data-category="sensors" data-testid="filter-btn-sensors">مستشعرات (Sensors)</button>
+        <button class="filter-btn" data-category="modules" data-testid="filter-btn-modules">موجّهات وموديولات</button>
+        <button class="filter-btn" data-category="tools" data-testid="filter-btn-tools">أدوات ومعدات</button>
+        <!-- FIX: added to match the "others" option in the #newProdCategory
+             dropdown (index.html add-product-modal) — that option existed
+             with no corresponding filter button, so any product tagged
+             "others" would have been invisible under every specific-category
+             filter click, same root cause as the "all" hardcoding bug fixed
+             in submitNewProduct() (script.js). -->
+        <button class="filter-btn" data-category="others" data-testid="filter-btn-others">أخرى</button>
+    </div>
+    <h2 class="section-title">المنتجات <span>المتاحة</span></h2>
+    <main id="products"></main>
+
+    <section id="scrollSplitCard" class="ssc" aria-label="عرض المنتجات">
+        <style>
+            :root {
+                --ssc-scroll-distance: 130vh;
+                --ssc-gutter: #0b0b0c;
+                --ssc-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            }
+
+            .ssc {
+                position: relative;
+                font-family: var(--ssc-font);
+                height: calc(100vh + var(--ssc-scroll-distance));
+            }
+
+            .ssc__sticky {
+                position: sticky;
+                top: 0;
+                height: 100vh;
+                overflow: hidden;
+                background: #000000;
+            }
+
+            /* Layer 0 — الصورة الرئيسية الواحدة. object-fit:cover يمنع أي تشويه.
+           (كانت فيها display:none هي سبب اختفاء الصورة — اتشالت خالص) */
+            .ssc__hero {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                z-index: 0;
+            }
+
+            .ssc__hero-scrim {
+                position: absolute;
+                inset: 0;
+                z-index: 1;
+                background: #000;
+                opacity: var(--ssc-scrim, 0);
+                pointer-events: none;
+            }
+
+            /* Layer 1 — الثلاث بانلز فوق الصورة، شفافين لحد ما يبدأوا ينفصلوا */
+            .ssc__panels {
+                position: absolute;
+                top: 15%;
+                bottom: 15%;
+                left: 20%;
+                right: 20%;
+                z-index: 2;
+                display: flex;
+                gap: calc(var(--ssc-split, 0) * clamp(10px, 2.4vw, 34px));
+                transform: scale(var(--ssc-zoom, 1));
+            }
+
+            .ssc__panel {
+                position: relative;
+                flex: 1 1 0%;
+                height: 100%;
+                perspective: 1700px;
+            }
+
+            .ssc__flip {
+                position: relative;
+                width: 100%;
+                height: 100%;
+                transform-style: preserve-3d;
+                transform: rotateY(var(--ssc-flip, 0deg));
+                box-shadow: 0 30px 70px -20px rgba(0, 0, 0, calc(var(--ssc-split, 0) * 0.55));
+            }
+
+            .ssc__face {
+                position: absolute;
+                inset: 0;
+                backface-visibility: hidden;
+                -webkit-backface-visibility: hidden;
+                border-radius: calc(var(--ssc-split, 0) * 18px);
+                overflow: hidden;
+            }
+
+            .ssc__face--front {
+                background: transparent;
+
+            }
+
+            .ssc__face--front img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+                opacity: 1;
+            }
+
+            .ssc__face--back {
+                transform: rotateY(180deg);
+                background: var(--ssc-bg-color, #1c1c1c);
+                color: var(--ssc-fg-color, #fff);
+                padding: 2.25rem;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+            }
+
+            .ssc__face--back h3 {
+                margin: 0 0 .7rem;
+                font-size: clamp(1.15rem, 1.9vw, 1.5rem);
+                font-weight: 650;
+                letter-spacing: -0.01em;
+                line-height: 1.2;
+            }
+
+            .ssc__face--back p {
+                margin: 0;
+                font-size: .92rem;
+                line-height: 1.55;
+                opacity: .85;
+                overflow-y: auto;
+                max-height: 100%;
+            }
+
+            @media (prefers-reduced-motion: reduce) {
+                .ssc__panels {
+                    transform: none !important;
+                }
+
+                .ssc__flip {
+                    transform: none !important;
+                }
+
+                .ssc__face--back {
+                    transform: none !important;
+                }
+
+                .ssc__face--front,
+                .ssc__face--back {
+                    transition: opacity .2s linear;
+                }
+            }
+
+            @media (max-width: 640px) {
+                .ssc__face--back {
+                    padding: 1.4rem;
+                }
+
+                .ssc__face--back p {
+                    font-size: .85rem;
+                }
+            }
+        </style>
+
+        <!-- ============================================== -->
+        <!-- 1. سيكشن الأنيميشن (الكروت اللي بتتقلب) -->
+        <!-- ============================================== -->
+        <!-- FIX #E: Removed id="scrollSplitCard" from this inner <section class="ssc">.
+             The outer wrapper at the top of this block already carries id="scrollSplitCard"
+             (the correct single owner). Two elements sharing the same id causes
+             getElementById/querySelector to return only the first match, making the
+             IntersectionObserver in scroll-split.js observe the outer wrapper while
+             all querySelectorAll('.ssc__panel') calls also resolve against the outer —
+             which is correct. No JS change needed; the outer id is the right anchor. -->
+        <section class="ssc">
+            <div class="ssc__sticky">
+
+                <!-- الصورة الرئيسية الكبيرة -->
+                <img class="ssc__hero"
+                    src="https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&h=900&fit=crop"
+                    alt="VOLT Electronics">
+
+                <div class="ssc__hero-scrim" aria-hidden="true"></div>
+
+                <div class="ssc__panels">
+
+                    <!-- الكارت الأول -->
+                    <div class="ssc__panel">
+                        <div class="ssc__flip">
+                            <div class="ssc__face ssc__face--front">
+                                <img src="https://images.unsplash.com/photo-1553406830-ef2513450d76?w=400&h=600&fit=crop"
+                                    alt="Arduino">
+                            </div>
+                            <div class="ssc__face ssc__face--back">
+                                <img src="https://images.unsplash.com/photo-1553406830-ef2513450d76?w=200&h=200&fit=crop"
+                                    style="width:100px;height:100px;object-fit:cover;border-radius:10px;margin-bottom:1rem;">
+                                <h3>Arduino Uno R3</h3>
+                                <p>المتحكم الدقيق الأشهر عالمياً — مثالي للمشاريع التفاعلية</p>
+                                <span style="color:#1db954;font-size:1.3rem;font-weight:bold;margin-top:1rem;">450
+                                    EGP</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- الكارت الثاني -->
+                    <div class="ssc__panel">
+                        <div class="ssc__flip">
+                            <div class="ssc__face ssc__face--front">
+                                <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=600&fit=crop"
+                                    alt="Sensor">
+                            </div>
+                            <div class="ssc__face ssc__face--back">
+                                <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?w=200&h=200&fit=crop"
+                                    style="width:100px;height:100px;object-fit:cover;border-radius:10px;margin-bottom:1rem;">
+                                <h3>Ultrasonic Sensor</h3>
+                                <p>مستشعر قياس المسافات بدقة عالية — مناسب للروبوتات</p>
+                                <span style="color:#1db954;font-size:1.3rem;font-weight:bold;margin-top:1rem;">85
+                                    EGP</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- الكارت الثالث -->
+                    <div class="ssc__panel">
+                        <div class="ssc__flip">
+                            <div class="ssc__face ssc__face--front">
+                                <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?w=400&h=600&fit=crop"
+                                    alt="Module">
+                            </div>
+                            <div class="ssc__face ssc__face--back">
+                                <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?w=200&h=200&fit=crop"
+                                    style="width:100px;height:100px;object-fit:cover;border-radius:10px;margin-bottom:1rem;">
+                                <h3>Relay Module 4CH</h3>
+                                <p>موديول ريلي 4 قنوات للتحكم في المنازل الذكية</p>
+                                <span style="color:#1db954;font-size:1.3rem;font-weight:bold;margin-top:1rem;">160
+                                    EGP</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+    </section>
+
+    <!-- التصنيفات -->
+    <h2 class="section-title" style="margin-top:80px;">تصنيفات <span>المتجر</span></h2>
+    <div id="folders-container" style="max-width:1200px; margin:0 auto 50px; padding:0 40px;">
+        <p id="foldersEmptyMsg" style="color:var(--muted); text-align:center; padding:20px; display:none;">لا توجد
+            تصنيفات مضافة بعد.</p>
+        <div id="foldersGrid"
+            style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:20px;"></div>
+    </div>
+
+    <!-- FIX #F: Removed this entire stale scaffolding block. It was a copy-paste
+        <!-- FIX #F: Removed this entire stale scaffolding block. It was a copy-paste
+             instruction template that was never converted to live markup. Its inner
+             <div id="products"> created a second element with id="products", duplicating
+             the real <main id="products"> at line 114. Duplicate ids cause
+             getElementById('products') to return only the first match — the real main
+             element — making this block's version unreachable and silently dead.
+             The real #products <main> above the scrollSplitCard section is the
+             correct and only products container. -->
+
+    <!-- منطق الأنيميشن ده بالكامل موجود في scroll-split.js المحمّل آخر الصفحة -->
+
+
+    <!-- PRODUCT MODAL -->
+    <div id="modal-overlay" class="overlay">
+        <div class="modal">
+            <button class="modal-close" id="closeModalBtn" data-testid="close-modal-btn">&times;</button>
+            <div class="modal-inner" id="modalInnerContent"></div>
+        </div>
+    </div>
+
+    <!-- CART MODAL -->
+    <div id="cart-overlay">
+        <div class="modal" style="max-width:500px;">
+            <button class="modal-close" id="closeCartBtn" data-testid="close-cart-btn">&times;</button>
+            <h3
+                style="margin-bottom:24px;font-family:'Rajdhani',sans-serif;font-size:26px;color:var(--green);text-align:center;letter-spacing:1px;">
+                🛒 سلة التسوق</h3>
+            <!-- Cart item remove buttons are dynamically rendered by
+                     script.js; their data-testid is being changed from
+                     `cart-item-remove-${i}` (cart index, unstable) to
+                     `cart-item-remove-${id}` (product id, stable). See
+                     script.js pass. -->
+            <div id="cartItemsContainer"></div>
+            <textarea id="orderComment" data-testid="order-comment"
+                placeholder="ملاحظاتك على الطلب أو لو محتاج منتج مش موجود..."
+                style="width:100%; margin-top:16px; padding:12px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:8px; font-family:'Cairo',sans-serif; outline:none; resize:vertical; min-height:80px;"
+                onfocus="this.style.borderColor='var(--green)'"
+                onblur="this.style.borderColor='var(--border)'"></textarea>
+            <div
+                style="margin-top:24px;border-top:1px solid var(--border);padding-top:18px;display:flex;justify-content:space-between;align-items:center;direction:rtl;">
+                <span style="font-weight:700;font-size:16px;">الإجمالي الكلي:</span>
+                <span id="cartTotal"
+                    style="color:var(--green);font-family:'Rajdhani',sans-serif;font-size:24px;font-weight:700;">0
+                    <span>EGP</span></span>
+            </div>
+            <button class="btn-primary" id="checkoutBtn" data-testid="checkout-btn"
+                style="width:100%;margin-top:20px;font-family:'Cairo',sans-serif;padding:14px;">✅ إتمام عملية
+                الشراء</button>
+        </div>
+    </div>
+
+    <!-- ALERT: يجب تسجيل الدخول -->
+    <div id="alert-modal">
+        <div class="alert-box">
+            <div class="alert-icon">⚠️</div>
+            <h3>يجب تسجيل الدخول أولاً</h3>
+            <p>لإتمام عملية الشراء، يرجى تسجيل الدخول إلى حسابك في VOLT.<br>إذا لم يكن لديك حساب، يمكنك إنشاء
+                واحد الآن
+                بسرعة.</p>
+            <div class="alert-actions">
+                <button class="btn-primary" id="alertLoginBtn" data-testid="alert-login-btn">تسجيل الدخول</button>
+                <button class="btn-secondary" id="alertRegisterBtn" data-testid="alert-register-btn">إنشاء حساب
+                    جديد</button>
+                <button class="btn-secondary" id="alertCloseBtn" data-testid="alert-close-btn"
+                    style="border-color:var(--border);color:var(--muted);">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOGIN MODAL -->
+    <div id="login-modal">
+        <div class="login-box">
+            <button class="modal-close" id="closeLoginBtn">&times;</button>
+            <h2>⚡ VOLT</h2>
+            <p class="login-sub">تسجيل الدخول إلى حسابك</p>
+            <input type="email" id="loginEmail" data-testid="login-email" placeholder="  رقم الهاتف"
+                style="text-align:right;">
+            <input type="password" id="loginPass" data-testid="login-pass" placeholder="كلمة المرور">
+            <button class="btn-primary" id="doLoginBtn" data-testid="do-login-btn"
+                style="width:100%;padding:13px;">دخول</button>
+            <p class="login-switch" style="margin-top:15px; margin-bottom:5px;">
+                <a href="https://wa.me/201111884419" target="_blank"
+                    style="color:var(--amber); text-decoration:none; font-weight:bold;">🔒 نسيت كلمة المرور؟
+                    تواصل
+                    معنا</a>
+            </p>
+            <p class="login-switch">ليس لديك حساب؟ <a id="switchToRegister" data-testid="switch-to-register">إنشاء
+                    حساب</a></p>
+        </div>
+    </div>
+
+    <!-- REGISTER WIZARD MODAL -->
+    <div id="register-modal">
+        <div class="wizard-box">
+            <button class="modal-close" id="closeRegisterBtn" data-testid="close-register-btn">&times;</button>
+            <div class="wizard-header">
+                <h2>⚡ إنشاء حساب</h2>
+                <p id="wizardSubtitle">أهلاً بك في VOLT — أكمل بياناتك</p>
+            </div>
+
+            <!-- Progress -->
+            <div class="wizard-progress" id="wizardProgress">
+                <div class="wp-step active" data-s="1">1</div>
+                <div class="wp-line"></div>
+                <div class="wp-step" data-s="2">2</div>
+                <div class="wp-line"></div>
+                <div class="wp-step" data-s="3">3</div>
+                <div class="wp-line"></div>
+                <div class="wp-step" data-s="4">4</div>
+                <div class="wp-line"></div>
+                <div class="wp-step" data-s="5">5</div>
+                <div class="wp-line"></div>
+                <div class="wp-step" data-s="6">6</div>
+            </div>
+
+            <!-- Step 1 -->
+            <div class="wizard-step active" id="wstep-1" data-testid="wstep-1-panel">
+                <p style="font-size:14px;color:var(--muted);text-align:center;margin-bottom:16px;">أنت تسجّل
+                    كـ...</p>
+                <div class="type-cards">
+                    <div class="type-card" data-type="student" data-testid="wiz-type-student"
+                        onclick="selectType('student',this)">
+                        <div class="type-icon">🎓</div>
+                        <div class="type-label">طالب</div>
+                        <div class="type-sub">مشاريع تخرج وهوايات</div>
+                    </div>
+                    <div class="type-card" data-type="company" data-testid="wiz-type-company"
+                        onclick="selectType('company',this)">
+                        <div class="type-icon">🏢</div>
+                        <div class="type-label">مؤسسة</div>
+                        <div class="type-sub">شركات وعملاء B2B</div>
+                    </div>
+                </div>
+                <p id="step1-err" class="wiz-error" data-testid="wstep-1-error">⚠️ الرجاء اختيار نوع الحساب</p>
+                <div class="wizard-nav">
+                    <button class="wiz-btn-next" data-testid="wstep-1-next" onclick="wizNext()">التالي ←</button>
+                </div>
+            </div>
+
+            <!-- Step 2 -->
+            <div class="wizard-step" id="wstep-2" data-testid="wstep-2-panel">
+                <label class="wiz-label" id="nameLabel">الاسم الكامل</label>
+                <input class="wiz-input" id="wiz-name" data-testid="wiz-name" type="text"
+                    placeholder="مثال: أحمد محمد علي">
+                <p id="step2-err" class="wiz-error" data-testid="wstep-2-error">⚠️ الرجاء إدخال الاسم</p>
+                <div class="wizard-nav">
+                    <button class="wiz-btn-back" data-testid="wstep-2-back" onclick="wizBack()">← رجوع</button>
+                    <button class="wiz-btn-next" data-testid="wstep-2-next" onclick="wizNext()">التالي ←</button>
+                </div>
+            </div>
+
+            <!-- Step 3 -->
+            <div class="wizard-step" id="wstep-3" data-testid="wstep-3-panel">
+                <label class="wiz-label" id="idLabel">رقم الهاتف</label>
+                <input class="wiz-input" id="wiz-id" data-testid="wiz-id" type="text" placeholder="01XXXXXXXXXX"
+                    style="direction:ltr;">
+                <p id="step3-err" class="wiz-error" data-testid="wstep-3-error">⚠️ الرجاء إدخال رقم هاتف</p>
+                <div class="wizard-nav">
+                    <button class="wiz-btn-back" data-testid="wstep-3-back" onclick="wizBack()">← رجوع</button>
+                    <button class="wiz-btn-next" data-testid="wstep-3-next" onclick="wizNext()">التالي ←</button>
+                </div>
+            </div>
+
+            <!-- Step 4 -->
+            <div class="wizard-step" id="wstep-4" data-testid="wstep-4-panel">
+                <label class="wiz-label">اميل للتواصل لو امكن</label>
+                <input type="text" id="wiz-phone" data-testid="wiz-email" class="wiz-input"
+                    placeholder="الإيميل (اختياري) - مثال: name@gmail.com">
+                <p style="font-size: 12px; color: gray;">* يمكنك تخطي هذه الخطوة أو كتابة اسمك وسنكمل نحن
+                    الباقي.</p>
+                <div class="wizard-nav">
+                    <button class="wiz-btn-back" data-testid="wstep-4-back" onclick="wizBack()">← رجوع</button>
+                    <button class="wiz-btn-next" data-testid="wstep-4-next" onclick="wizNext()">التالي ←</button>
+                </div>
+            </div>
+
+            <!-- Step 5 -->
+            <div class="wizard-step" id="wstep-5" data-testid="wstep-5-panel">
+                <label class="wiz-label">كلمة المرور</label>
+                <div style="position: relative; width: 100%; display: block; margin-bottom: 15px;">
+                    <input class="wiz-input" type="password" id="wiz-pass" data-testid="wiz-pass"
+                        placeholder="أدخل كلمة السر (8 أحرف على الأقل)" autocomplete="new-password"
+                        style="width: 100%; padding-left: 45px; margin-bottom: 0 !important; box-sizing: border-box;">
+                    <span id="eye-icon" data-testid="wiz-pass-toggle" onclick="toggleWizPassword()"
+                        style="position: absolute; left: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; z-index: 10; font-size: 18px; line-height: 1;">👁️</span>
+                </div>
+                <p id="step5-err" class="wiz-error" data-testid="wstep-5-error">⚠️ كلمة المرور يجب أن تكون 8 أحرف أو
+                    أكثر</p>
+                <div class="wizard-nav">
+                    <button class="wiz-btn-back" data-testid="wstep-5-back" onclick="wizBack()">← رجوع</button>
+                    <button class="wiz-btn-next" data-testid="wstep-5-next" onclick="wizNext()">التالي ←</button>
+                </div>
+            </div>
+
+            <!-- Step 6 -->
+            <div class="wizard-step" id="wstep-6" data-testid="wstep-6-panel">
+                <label class="wiz-label">العنوان</label>
+                <input class="wiz-input" id="wiz-address" data-testid="wiz-address" type="text"
+                    placeholder="المدينة، الحي، الشارع...">
+                <p id="step6-err" class="wiz-error" data-testid="wstep-6-error">⚠️ الرجاء إدخال العنوان</p>
+                <div class="wizard-nav">
+                    <button class="wiz-btn-back" data-testid="wstep-6-back" onclick="wizBack()">← رجوع</button>
+                    <button class="wiz-btn-next" data-testid="wstep-6-submit" onclick="wizSubmit()">✅ إنشاء
+                        الحساب</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PAYMENT MODAL -->
+    <div id="payment-modal">
+        <div class="payment-box">
+            <button class="modal-close" id="closePaymentBtn" style="right:16px;left:auto;">&times;</button>
+            <h3>💳 طريقة الدفع</h3>
+            <p class="pay-sub">اختر طريقة الدفع المناسبة لإتمام طلبك</p>
+            <div class="pay-summary" id="paySummary" data-testid="payment-summary"></div>
+            <div class="pay-options">
+                <div class="pay-card" onclick="choosePayment('cash')">
+                    <div class="pay-icon">💵</div>
+                    <div class="pay-name">كاش</div>
+                    <div class="pay-desc">الدفع عند الاستلام</div>
+                </div>
+                <div class="pay-card" onclick="choosePayment('instapay')">
+                    <div class="pay-icon">📱</div>
+                    <div class="pay-name">InstaPay</div>
+                    <div class="pay-desc">تحويل فوري</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SUCCESS MODAL -->
+    <div id="success-modal" class="overlay" style="z-index:700;">
+        <div class="modal" style="max-width:420px;">
+            <div class="success-box" id="successContent" data-testid="success-content"></div>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast" data-testid="toast"></div>
+
+    <!-- FOOTER -->
+
+    <div id="add-product-modal" class="overlay">
+        <div class="modal" style="max-width:440px; background:var(--card-bg);">
+            <button class="modal-close"
+                onclick="document.getElementById('add-product-modal').classList.remove('open')">&times;</button>
+            <h3 style="color:var(--green); margin-bottom:20px; font-family:'Rajdhani',sans-serif;">➕ إضافة منتج
+                للمتجر
+            </h3>
+            <input type="text" id="newProdName" data-testid="admin-prod-name" placeholder="اسم المنتج"
+                style="width:100%; margin-bottom:12px; padding:12px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:8px;">
+            <input type="text" id="newProdEmoji" data-testid="admin-prod-emoji"
+                placeholder="الصورة (إيموجي 🔋 أو رابط صورة)"
+                style="width:100%; margin-bottom:12px; padding:12px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:8px;">
+            <select id="newProdCategory" data-testid="admin-prod-category"
+                style="width:100%; margin-bottom:12px; padding:12px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:8px; font-family:'Cairo',sans-serif;">
+                <option value="all">اختر تصنيف المنتج...</option>
+                <option value="arduino">آردوينو ومتحكمات</option>
+                <option value="sensors">مستشعرات (Sensors)</option>
+                <option value="modules">موجّهات وموديولات</option>
+                <option value="tools">أدوات ومعدات</option>
+                <option value="others">أخرى</option>
+            </select>
+            <div style="display:flex; gap:12px; margin-bottom:12px;">
+                <input type="number" id="newProdPrice" data-testid="admin-prod-price" placeholder="السعر (ج.م)"
+                    style="flex:1; padding:12px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:8px;">
+                <input type="number" id="newProdStock" data-testid="admin-prod-stock" placeholder="الكمية المتوفرة"
+                    style="flex:1; padding:12px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:8px;">
+            </div>
+            <textarea id="newProdDesc" data-testid="admin-prod-desc" placeholder="وصف المنتج وتفاصيله..."
+                style="width:100%; margin-bottom:20px; padding:12px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:8px; min-height:80px;"></textarea>
+            <button class="btn-primary" style="width:100%;" onclick="submitNewProduct()">إضافة المنتج ✅</button>
+        </div>
+    </div>
+
+    <div id="admin-modal" class="overlay" style="z-index:900;">
+        <div class="modal" style="max-width:850px; background:var(--card-bg);">
+            <button class="modal-close"
+                onclick="document.getElementById('admin-modal').classList.remove('open')">&times;</button>
+            <h2 style="color:var(--amber); font-family:'Rajdhani',sans-serif; margin-bottom:20px;">🛡️ لوحة تحكم
+                الإدارة
+            </h2>
+            <div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
+                <!-- FIX #H-admin: Restored malformed button tag — original had
+                         the button text "أكواد الخصم 🎟️" as a raw attribute rather
+                         than element content, causing it to render as an empty button.
+                         data-testid added here; the matching attribute in the rendered
+                         HTML is the test contract noted in script2.js FIX #7. -->
+                <button id="adminPanelBtn" class="btn-primary" data-testid="admin-panel-btn"
+                    style="flex:1; padding:10px;">أكواد الخصم 🎟️</button>
+                <button class="btn-primary" data-testid="admin-render-orders" onclick="renderAdminOrders()"
+                    style="flex:1; padding:10px;">📦
+                    إدارة
+                    الأوردرات</button>
+                <button class="btn-primary" style="background:var(--dark); color:var(--text);"
+                    data-testid="admin-render-users" onclick="renderAdminUsers()" style="flex:1; padding:10px;">👥
+                    بيانات العملاء</button>
+                <button class="btn-primary" style="background:var(--dark); color:var(--text);"
+                    data-testid="admin-open-add-product"
+                    onclick="document.getElementById('add-product-modal').classList.add('open')"
+                    style="flex:1; padding:10px;">➕ إضافة منتج للمتجر</button>
+                <button class="btn-primary" style="background:var(--dark); color:var(--amber);"
+                    data-testid="admin-render-categories" onclick="renderAdminCategories()"
+                    style="flex:1; padding:10px;">🏷️ إدارة
+                    التصنيفات</button>
+                <button class="btn-primary" style="background:var(--dark); color:var(--green);"
+                    data-testid="admin-render-products" onclick="renderAdminProducts()"
+                    style="flex:1; padding:10px;">🛍️ إدارة
+                    المنتجات</button>
+            </div>
+            <div id="admin-content" data-testid="admin-content"
+                style="max-height:60vh; overflow-y:auto; padding:10px; background:#0e140e; border:1px solid var(--border); border-radius:8px;">
+                <p style="color:var(--muted); text-align:center; margin-top:20px;">اختر من القائمة لعرض
+                    البيانات...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         FOLDER (CATEGORY) MANAGEMENT — admin-only, opened from inside admin-modal
+         via the existing "🏷️ إدارة التصنيفات" button (renderAdminCategories()).
+    ========================================================================== -->
+    <div id="folder-mgmt-modal" class="overlay" style="z-index:950;">
+        <div class="modal" style="max-width:800px; background:var(--card-bg);">
+            <button class="modal-close"
+                onclick="document.getElementById('folder-mgmt-modal').classList.remove('open')">&times;</button>
+            <h2 style="color:var(--amber); font-family:'Rajdhani',sans-serif; margin-bottom:6px;">🏷️ إدارة
+                التصنيفات
+                والمجلدات</h2>
+            <p style="color:var(--muted); font-size:13px; margin-bottom:20px;">أنشئ مجلدات وأضف إليها منتجات من
+                المتجر</p>
+
+            <!-- Create Folder Form -->
+            <form id="folderCreateForm"
+                style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; align-items:flex-end;">
+                <div style="flex:2; min-width:160px;">
+                    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">اسم
+                        المجلد</label>
+                    <input type="text" id="newFolderName" placeholder="مثال: دوائر متكاملة (ICs)" required
+                        style="width:100%; padding:11px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:8px; box-sizing:border-box;">
+                </div>
+                <div style="flex:1; min-width:100px;">
+                    <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:4px;">أيقونة
+                        (إيموجي)</label>
+                    <input type="text" id="newFolderIcon" placeholder="📁" maxlength="4"
+                        style="width:100%; padding:11px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:8px; box-sizing:border-box; text-align:center;">
+                </div>
+                <button type="submit" class="btn-primary" data-testid="folder-create-submit-btn"
+                    style="padding:11px 18px; white-space:nowrap;">➕ إنشاء
+                    مجلد</button>
+            </form>
+
+            <!-- Folders list with expandable product-assignment -->
+            <h3 style="color:var(--green); font-family:'Rajdhani',sans-serif; margin-bottom:12px;">المجلدات
+                الحالية
+            </h3>
+            <div id="adminFoldersList" data-testid="admin-folders-list"
+                style="max-height:50vh; overflow-y:auto; padding:6px; background:#0e140e; border:1px solid var(--border); border-radius:8px;">
+                <p id="adminFoldersEmpty" style="color:var(--muted); text-align:center; padding:16px;">لا توجد
+                    مجلدات
+                    بعد. أنشئ أول مجلد من الأعلى.</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================================================
+         ⚡ TASK MANAGEMENT SYSTEM — fully standalone from admin panel.
+         Two overlays: password gate (#task-password-modal), then the
+         actual interface (#task-mgmt-modal). Triggered by #taskMgmtBtn
+         in the nav. Logic lives in script.js (see TASK MANAGEMENT block).
+    ========================================================================== -->
+
+    <!-- Step 1: Password gate -->
+    <div id="task-password-modal" class="overlay" style="z-index:960;">
+        <div class="modal" style="max-width:380px; text-align:center;">
+            <button class="modal-close" id="closeTaskPassBtn" data-testid="close-task-pass-btn">&times;</button>
+            <div style="font-size:44px; margin-bottom:10px;">🔐</div>
+            <h3
+                style="font-family:'Rajdhani',sans-serif; font-size:24px; color:var(--amber); letter-spacing:1px; margin-bottom:8px;">
+                إدارة المهام</h3>
+            <p style="font-size:13px; color:var(--muted); margin-bottom:22px;">هذه اللوحة مستقلة عن لوحة تحكم
+                الإدارة —
+                أدخل كلمة المرور الخاصة بها للمتابعة.</p>
+            <input type="password" id="taskPasswordInput" data-testid="task-password-input"
+                placeholder="كلمة مرور إدارة المهام"
+                style="width:100%; background:#0e140e; border:1.5px solid var(--border); border-radius:8px; padding:12px 14px; color:var(--text); font-family:'Cairo',sans-serif; font-size:14px; outline:none; margin-bottom:10px; box-sizing:border-box; text-align:center;"
+                onfocus="this.style.borderColor='var(--amber)'" onblur="this.style.borderColor='var(--border)'">
+            <p id="taskPassErr" style="font-size:12px; color:var(--red); margin-bottom:14px; display:none;">⚠️
+                كلمة
+                المرور غير صحيحة،
+                حاول مرة أخرى</p>
+            <button class="btn-primary" id="taskPassSubmitBtn" data-testid="task-pass-submit-btn"
+                style="width:100%; background:var(--amber); padding:13px;">دخول 🔓</button>
+        </div>
+    </div>
+
+    <!-- Step 2: Task management interface (shown only after correct password) -->
+    <div id="task-mgmt-modal" class="overlay" style="z-index:960;">
+        <div class="modal" style="max-width:720px; background:var(--card-bg);">
+            <button class="modal-close" id="closeTaskMgmtBtn" data-testid="close-task-mgmt-btn">&times;</button>
+            <h2 style="color:var(--amber); font-family:'Rajdhani',sans-serif; margin-bottom:4px;">📋 إدارة
+                المهام
+                اليومية</h2>
+            <p style="color:var(--muted); font-size:13px; margin-bottom:22px;">قم بتوزيع المهام على الموظفين
+                لهذا
+                اليوم</p>
+
+            <!-- Task Form -->
+            <form id="taskForm">
+                <label class="wiz-label" style="color:var(--amber);">اسم الوظيفة</label>
+                <input class="wiz-input" id="taskJobTitle" data-testid="task-job-title" type="text"
+                    placeholder="مثال: فني صيانة" style="margin-bottom:14px;" required>
+
+                <label class="wiz-label" style="color:var(--amber);">اسم الموظف</label>
+                <input class="wiz-input" id="taskEmployeeName" data-testid="task-employee-name" type="text"
+                    placeholder="مثال: محمد سعيد" style="margin-bottom:14px;" required>
+
+                <label class="wiz-label" style="color:var(--amber);">التاسك المطلوب</label>
+                <textarea id="taskDescription" data-testid="task-description" class="wiz-input"
+                    placeholder="اكتب تفاصيل المهمة المطلوب إنجازها اليوم..."
+                    style="margin-bottom:16px; min-height:90px; resize:vertical; font-family:'Cairo',sans-serif;"
+                    required></textarea>
+
+                <button type="submit" class="btn-primary" data-testid="task-form-submit-btn"
+                    style="width:100%; background:var(--amber); padding:13px;">
+                    ➕ إضافة المهمة</button>
+            </form>
+
+            <!-- Task List / Table -->
+            <h3 style="color:var(--green); font-family:'Rajdhani',sans-serif; margin-top:28px; margin-bottom:12px;">
+                مهام اليوم (<span id="taskCountLabel" data-testid="task-count">0</span>)</h3>
+            <div id="taskListContainer" data-testid="task-list"
+                style="max-height:320px; overflow-y:auto; background:#0e140e; border:1px solid var(--border); border-radius:8px; padding:8px;">
+                <p id="taskListEmpty" style="color:var(--muted); text-align:center; padding:20px;">لا توجد مهام
+                    مضافة
+                    اليوم بعد.</p>
+            </div>
+
+            <button type="button" id="clearAllTasksBtn" data-testid="clear-all-tasks-btn"
+                style="width:100%; margin-top:14px; background:transparent; border:1.5px solid var(--red); color:var(--red); border-radius:8px; padding:10px; font-family:'Cairo',sans-serif; font-size:13px; cursor:pointer;">
+                🗑️ مسح كل المهام
+            </button>
+        </div>
+    </div>
+
+
+    <script src="script.js"></script>
+    <!-- ⚡ VOLT SWIRL LIGHTNING ANIMATION SCRIPT ⚡ -->
+    <script>
+        (function () {
+            /* ============================================================
+               دالة برق الدوامة — تشتغل على أي canvas وعرض/ارتفاع
+            ============================================================ */
+            function lightning(x1, y1, x2, y2, roughness, depth) {
+                if (depth === 0) return [[x1, y1], [x2, y2]];
+                var mx = (x1 + x2) / 2 + (Math.random() - 0.5) * roughness;
+                var my = (y1 + y2) / 2 + (Math.random() - 0.5) * roughness;
+                return lightning(x1, y1, mx, my, roughness * 0.55, depth - 1)
+                    .concat(lightning(mx, my, x2, y2, roughness * 0.55, depth - 1));
+            }
+            function drawBoltOnCtx(ctx, pts, alpha, lineW) {
+                if (!pts || pts.length < 2) return;
+                ctx.beginPath();
+                ctx.moveTo(pts[0][0], pts[0][1]);
+                for (var i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+                // توهج أخضر
+                ctx.strokeStyle = 'rgba(29,185,84,' + (alpha * 0.5) + ')';
+                ctx.lineWidth = lineW * 3.5;
+                ctx.shadowColor = '#1db954';
+                ctx.shadowBlur = 8;
+                ctx.stroke();
+                // البرق الأبيض الرئيسي
+                ctx.strokeStyle = 'rgba(255,255,255,' + alpha + ')';
+                ctx.lineWidth = lineW;
+                ctx.shadowBlur = 0;
+                ctx.stroke();
+            }
+
+            /* ============================================================
+               أنيميشن NAV — canvas جوه الـ nav-logo
+            ============================================================ */
+            function initNavLightning() {
+                var canvas = document.getElementById('nav-lightning-canvas');
+                if (!canvas) return;
+                var parent = canvas.parentElement;
+
+                function resize() {
+                    canvas.width = parent.offsetWidth || 120;
+                    canvas.height = parent.offsetHeight || 40;
+                }
+                resize();
+                window.addEventListener('resize', resize);
+                var ctx = canvas.getContext('2d');
+                var t = 0;
+
+                function frame() {
+                    var W = canvas.width, H = canvas.height;
+                    ctx.clearRect(0, 0, W, H);
+
+                    var cx = W / 2, cy = H / 2;
+                    var rx = W * 0.48, ry = H * 0.42;
+                    var speed = t * 0.045;
+
+                    // 3 بروق تدور في حلقة داخل الحروف
+                    for (var i = 0; i < 3; i++) {
+                        var angle1 = speed + i * (Math.PI * 2 / 3);
+                        var angle2 = angle1 + 0.55;
+                        var x1 = cx + Math.cos(angle1) * rx;
+                        var y1 = cy + Math.sin(angle1) * ry;
+                        var x2 = cx + Math.cos(angle2) * rx;
+                        var y2 = cy + Math.sin(angle2) * ry;
+                        var pts = lightning(x1, y1, x2, y2, 10, 5);
+                        drawBoltOnCtx(ctx, pts, 0.85, 1.0);
+
+                        // برق ثانوي أخفى
+                        if (Math.random() < 0.3) {
+                            var angle3 = angle1 + 0.25;
+                            var x3 = cx + Math.cos(angle3) * rx * 0.7;
+                            var y3 = cy + Math.sin(angle3) * ry * 0.7;
+                            var pts2 = lightning(x1, y1, x3, y3, 6, 4);
+                            drawBoltOnCtx(ctx, pts2, 0.4, 0.6);
+                        }
+                    }
+                    t++;
+                    requestAnimationFrame(frame);
+                }
+                frame();
+            }
+
+            /* ============================================================
+               أنيميشن SPLASH — canvas جوه الـ splash-wordmark wrapper
+            ============================================================ */
+            function initSplashLightning() {
+                var canvas = document.getElementById('splash-lightning-canvas');
+                if (!canvas) return;
+                var parent = canvas.parentElement;
+
+                function resize() {
+                    canvas.width = parent.offsetWidth || 320;
+                    canvas.height = parent.offsetHeight || 90;
+                }
+                resize();
+                window.addEventListener('resize', resize);
+
+                var ctx = canvas.getContext('2d');
+                var t = 0;
+function frame() {
+                    var W = canvas.width, H = canvas.height;
+                    ctx.clearRect(0, 0, W, H);
+                    var cx = W / 2, cy = H / 2;
+                    var rx = W * 0.46, ry = H * 0.38;
+                    var speed = t * 0.04;
+
+                    for (var i = 0; i < 3; i++) {
+                        var angle1 = speed + i * (Math.PI * 2 / 3);
+                        var angle2 = angle1 + 0.6;
+                        var x1 = cx + Math.cos(angle1) * rx;
+                        var y1 = cy + Math.sin(angle1) * ry;
+                        var x2 = cx + Math.cos(angle2) * rx;
+                        var y2 = cy + Math.sin(angle2) * ry;
+                        var pts = lightning(x1, y1, x2, y2, 14, 6);
+                        drawBoltOnCtx(ctx, pts, 0.9, 1.3);
+
+                        if (Math.random() < 0.35) {
+                            var mx = cx + Math.cos(angle1 + 0.3) * rx * 0.6;
+                            var my = cy + Math.sin(angle1 + 0.3) * ry * 0.6;
+                            var pts2 = lightning(x1, y1, mx, my, 8, 4);
+                            drawBoltOnCtx(ctx, pts2, 0.45, 0.7);
+                        }
+                    }
+                    t++;
+                    requestAnimationFrame(frame);
+                }
+                frame();
+            }/* تشغيل بعد تحميل الصفحة */
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', function () {
+                    initNavLightning();
+                    initSplashLightning();
+                });
+            } else {
+                initNavLightning();
+                initSplashLightning();
+            }
+        })();
+    </script>
+    <script>
+        async function renderAdminProducts() {
+            const adminContent = document.getElementById('admin-content') || document.getElementById('adminContent');
+            if (!adminContent) return;
+            const productsList = await getProducts();
+            let html = `
+            <h3 style="color:#1db954; text-align:center; margin-bottom:15px;">🛍️ تزويد كميات المنتجات</h3>
+            <table style="width:100%; text-align:right; border-collapse:collapse; background:#121212; border-radius:8px;">
+                <tr style="border-bottom:1px solid #333;">
+                    <th style="padding:10px;">المنتج</th>
+                    <th style="padding:10px; text-align:center;">الكمية</th>
+                    <th style="padding:10px; text-align:center;">تزويد/تعديل</th>
+                </tr>
+            `;
+            productsList.forEach((p) => {
+                const safeId = escapeHtml(String(p.id));
+                html += `
+                <tr style="border-bottom:1px solid #222;" data-testid="admin-product-row-${safeId}">
+                    <td style="padding:10px; font-weight:bold;">${escapeHtml(p.name) || 'منتج'}</td>
+                    <td style="padding:10px; text-align:center; color:gray;">${p.stock || 0}</td>
+                    <td style="padding:10px; text-align:center;">
+                        <input type="number" id="fast-stock-${safeId}" data-testid="fast-stock-input-${safeId}" value="${p.stock || 0}" style="width:60px; padding:5px; text-align:center; background:#000; color:#fff; border:1px solid #444; border-radius:4px;">
+                        <button data-testid="fast-stock-save-${safeId}" onclick="saveFastStock('${safeId}')" style="background:#1db954; color:white; padding:5px 10px; border:none; border-radius:4px; cursor:pointer;">حفظ 💾</button>
+                    </td>
+                </tr>`;
+            });
+            html += `</table>`;
+            adminContent.innerHTML = html;
+        }
+
+        async function saveFastStock(id) {
+            if (!currentUser || currentUser.role !== "admin") return;
+            const input = document.getElementById(`fast-stock-${id}`);
+            if (!input) return;
+            const newStock = parseInt(input.value, 10);
+            if (isNaN(newStock) || newStock < 0) {
+                showToast("قيمة الكمية غير صحيحة", "warn");
+                return;
+            }
+
+            const products = await getProducts();
+            const idx = products.findIndex(p => String(p.id) === String(id));
+            if (idx === -1) return;
+            products[idx].stock = newStock;
+            saveProducts(products);
+
+            if (window.voltFirebase && typeof window.voltFirebase.updateProduct === "function") {
+                try {
+                    await window.voltFirebase.updateProduct(String(id), { stock: newStock });
+                } catch (err) {
+                    console.error("saveFastStock: فشل تحديث المخزون في Firestore", err);
+                    showToast("فشل الحفظ في قاعدة البيانات، حاول مرة أخرى", "error");
+                    return;
+                }
+            }
+
+            showToast("✅ تم تزويد الكمية بنجاح! المنتج رجع متاح للبيع.", "green");
+            renderProducts(products);
+            await renderAdminProducts();
+        }
+    </script>
+
+    <!-- ==========================================================================
+         FOLDERS / CATEGORIES SYSTEM — links folders to real products in
+         volt_products by id. Storage: volt_folders =
+         [{ id, name, icon, productIds: [productId, ...] }, ...]
+
+         Admin side: renderAdminCategories() (called by the existing admin
+         button) opens #folder-mgmt-modal, lets the admin create folders and
+         assign/remove real products.
+
+         Public side: renderPublicFolders() renders folder cards into
+         #foldersGrid on page load. Clicking a folder expands it inline to
+         show the real product cards (same .card.glow-card markup as the
+         main shop grid), reusing openProductModal() from script.js — the
+         circular FAB (+) opens the product modal, where addToCart() is
+         invoked with the selected quantity, so folder items behave
+         identically to normal product cards.
+    ========================================================================== -->
+    <script>
+
+
+
+
+
+        (function () {
+            const FOLDERS_STORAGE_KEY = "volt_folders";
+            let expandedFolderId = null;
+
+            function idMatch(a, b) { return String(a) === String(b); }
+            function folderHasProduct(folder, productId) {
+                return (folder.productIds || []).some(pid => idMatch(pid, productId));
+            }
+
+            async function getFolders() {
+                if (window.voltFirebase && typeof window.voltFirebase.getFolders === "function") {
+                    try {
+                        const folders = await window.voltFirebase.getFolders();
+                        if (Array.isArray(folders)) {
+                            localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+                            return folders;
+                        }
+                    } catch (err) {
+                        console.warn("getFolders: فشل Firestore — بنستخدم الكاش المحلي", err);
+                    }
+                }
+                try { return JSON.parse(localStorage.getItem(FOLDERS_STORAGE_KEY)) || []; }
+                catch (e) { return []; }
+            }
+
+            async function persistFolder(folder) {
+                if (window.voltFirebase && typeof window.voltFirebase.saveFolder === "function") {
+                    try { await window.voltFirebase.saveFolder(folder); } catch (err) {
+                        console.warn("persistFolder: فشل الحفظ في Firestore", err);
+                    }
+                }
+                const folders = await getFolders();
+                const idx = folders.findIndex(f => f.id === folder.id);
+                if (idx >= 0) folders[idx] = folder; else folders.push(folder);
+                localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+            }
+
+            async function removeFolderFromStorage(folderId) {
+                if (window.voltFirebase && typeof window.voltFirebase.deleteFolder === "function") {
+                    try { await window.voltFirebase.deleteFolder(folderId); } catch (err) {
+                        console.warn("removeFolderFromStorage: فشل الحذف من Firestore", err);
+                    }
+                }
+                const folders = (await getFolders()).filter(f => f.id !== folderId);
+                localStorage.setItem(FOLDERS_STORAGE_KEY, JSON.stringify(folders));
+            }
+
+            function escapeHtml(str) {
+                const div = document.createElement("div");
+                div.textContent = str == null ? "" : String(str);
+                return div.innerHTML;
+            }
+
+            async function getAllProducts() {
+                if (typeof getProducts === "function") return getProducts();
+                try { return JSON.parse(localStorage.getItem("volt_products")) || []; }
+                catch (e) { return []; }
+            }
+
+            window.renderAdminCategories = function () {
+                document.getElementById("folder-mgmt-modal").classList.add("open");
+                renderAdminFoldersList();
+            };
+
+            async function renderAdminFoldersList() {
+                const folders = await getFolders();
+                const container = document.getElementById("adminFoldersList");
+
+                if (folders.length === 0) {
+                    container.innerHTML = `<p style="color:var(--muted); text-align:center; padding:16px;">لا توجد مجلدات بعد. أنشئ أول مجلد من الأعلى.</p>`;
+                    return;
+                }
+
+                const allProducts = await getAllProducts();
+
+                container.innerHTML = folders.map(folder => {
+                    const assignedProducts = allProducts.filter(p => folderHasProduct(folder, p.id));
+                    const unassignedProducts = allProducts.filter(p => !folderHasProduct(folder, p.id));
+
+                    const assignedRows = assignedProducts.length
+                        ? assignedProducts.map(p => `
+                            <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-bottom:1px solid var(--border);">
+                            <span style="font-size:13px;">
+                            ${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;border-radius:2px;" onerror="this.replaceWith(document.createTextNode('📦 '))">` : (p.emoji ? escapeHtml(p.emoji) + ' ' : '📦 ')}
+                            ${escapeHtml(p.name)}
+                            </span>                                <button onclick="window.__removeProductFromFolder('${folder.id}', '${p.id}')"
+                                    style="background:transparent; border:1px solid var(--border); color:var(--muted); border-radius:6px; padding:3px 8px; cursor:pointer; font-size:11px;">إزالة</button>
+                            </div>`).join("")
+                        : `<p style="color:var(--muted); font-size:12px; padding:8px; text-align:center;">لا توجد منتجات في هذا المجلد بعد.</p>`;
+
+                    const productOptions = unassignedProducts.length
+                        ? unassignedProducts.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)}</option>`).join("")
+                        : `<option value="">لا توجد منتجات إضافية لإضافتها</option>`;
+
+                    return `
+                        <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:12px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                                <span style="font-weight:bold; color:var(--amber); font-size:15px;">${folder.icon || '📁'} ${escapeHtml(folder.name)}</span>
+                                <button onclick="window.__deleteFolder('${folder.id}')"
+                                    style="background:transparent; border:1px solid var(--border); color:var(--muted); border-radius:6px; padding:4px 10px; cursor:pointer; font-size:12px;">🗑️ حذف المجلد</button>
+                            </div>
+                            <div style="margin-bottom:10px;">${assignedRows}</div>
+                            <div style="display:flex; gap:8px;">
+                                <select id="productPicker-${folder.id}" ${unassignedProducts.length === 0 ? 'disabled' : ''}
+                                    style="flex:1; padding:8px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:6px; font-family:'Cairo',sans-serif; font-size:13px;">
+                                    ${productOptions}
+                                </select>
+                                <button onclick="window.__addProductToFolder('${folder.id}')" ${unassignedProducts.length === 0 ? 'disabled' : ''}
+                                    style="background:var(--green); color:#000; border:none; border-radius:6px; padding:8px 14px; cursor:pointer; font-size:13px; font-weight:bold; white-space:nowrap;">إضافة
+                                    ➕</button>
+                            </div>
+                        </div>`;
+                }).join("");
+            }
+
+            async function handleFolderCreateSubmit(e) {
+                e.preventDefault();
+                const name = document.getElementById("newFolderName").value.trim();
+                const icon = document.getElementById("newFolderIcon").value.trim() || "📁";
+
+                if (!name) {
+                    if (typeof showToast === "function") showToast("⚠️ الرجاء إدخال اسم المجلد", "warn");
+                    return;
+                }
+
+                const newFolder = {
+                    id: "f_" + Date.now() + "_" + Math.floor(Math.random() * 1000),
+                    name,
+                    icon,
+                    productIds: []
+                };
+                await persistFolder(newFolder);
+                await renderAdminFoldersList();
+                await renderPublicFolders();
+                document.getElementById("folderCreateForm").reset();
+                if (typeof showToast === "function") showToast("✅ تم إنشاء المجلد بنجاح", "green");
+            }
+
+            window.__addProductToFolder = async function (folderId) {
+                const select = document.getElementById(`productPicker-${folderId}`);
+                const productId = select?.value;
+                if (!productId) return;
+
+                const folders = await getFolders();
+                const folder = folders.find(f => f.id === folderId);
+                if (!folder) return;
+                if (!folderHasProduct(folder, productId)) {
+                    folder.productIds = folder.productIds || [];
+                    folder.productIds.push(productId);
+                    await persistFolder(folder);
+                    await renderAdminFoldersList();
+                    await renderPublicFolders();
+                    if (typeof showToast === "function") showToast("✅ تمت إضافة المنتج للمجلد", "green");
+                }
+            };
+
+            window.__removeProductFromFolder = async function (folderId, productId) {
+                const folders = await getFolders();
+                const folder = folders.find(f => f.id === folderId);
+                if (!folder) return;
+                folder.productIds = (folder.productIds || []).filter(id => !idMatch(id, productId));
+                await persistFolder(folder);
+                await renderAdminFoldersList();
+                await renderPublicFolders();
+            };
+
+            window.__deleteFolder = async function (folderId) {
+                if (!confirm("هل أنت متأكد من حذف هذا المجلد؟ لن يتم حذف المنتجات نفسها من المتجر.")) return;
+                await removeFolderFromStorage(folderId);
+                if (expandedFolderId === folderId) expandedFolderId = null;
+                await renderAdminFoldersList();
+                await renderPublicFolders();
+                if (typeof showToast === "function") showToast("🗑️ تم حذف المجلد", "warn");
+            };
+
+            window.renderPublicFolders = async function renderPublicFolders() {
+                const folders = await getFolders();
+                const grid = document.getElementById("foldersGrid");
+                const emptyMsg = document.getElementById("foldersEmptyMsg");
+                if (!grid) return;
+
+                if (folders.length === 0) {
+                    grid.innerHTML = "";
+                    if (emptyMsg) emptyMsg.style.display = "block";
+                    return;
+                }
+                if (emptyMsg) emptyMsg.style.display = "none";
+
+                const allProducts = await getAllProducts();
+
+                grid.innerHTML = folders.map(folder => {
+                    const count = (folder.productIds || []).length;
+                    const isOpen = expandedFolderId === folder.id;
+                    const folderCard = `
+                        <div class="card glow-card folder-card" data-testid="folder-card" onclick="window.__toggleFolder('${folder.id}')"
+                            style="cursor:pointer; text-align:center; padding:20px 14px; ${isOpen ? 'border-color:var(--amber);' : ''}">
+                            <div style="font-size:38px; margin-bottom:8px;">${folder.icon || '📁'}</div>
+                            <h3 class="card-name" style="margin-bottom:4px;">${escapeHtml(folder.name)}</h3>
+                            <span style="color:var(--muted); font-size:12px;">${count} ${count === 1 ? 'منتج' : 'منتجات'}</span>
+                        </div>`;
+
+                    if (!isOpen) return folderCard;
+
+                    const assignedProducts = allProducts.filter(p => folderHasProduct(folder, p.id));
+                    const productsHtml = assignedProducts.length
+                        ? `<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:14px;">
+                                ${assignedProducts.map(p => `
+                                    <div class="card glow-card" data-id="${p.id}">
+                                        <div class="card-img" style="position:relative;" onclick="event.stopPropagation(); openProductModal('${p.id}')">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}
+                                            ${p.stock <= 0
+                                ? `<button class="fab-add" data-testid="fab-add" data-product-id="${p.id}" style="position:absolute; bottom:-18px; left:50%; transform:translateX(-50%); width:36px; height:36px; border-radius:50%; background:var(--border); color:var(--muted); border:none; cursor:not-allowed; font-size:20px; font-weight:bold; display:flex; align-items:center; justify-content:center; z-index:5;" disabled>×</button>`
+                                : `<button class="fab-add" data-testid="fab-add" data-product-id="${p.id}" onclick="event.stopPropagation(); openProductModal('${p.id}');" style="position:absolute; bottom:-18px; left:50%; transform:translateX(-50%); width:36px; height:36px; border-radius:50%; background:#FFFFFF; color:#FF7A00; border:none; box-shadow:0 2px 6px rgba(0,0,0,0.25); cursor:pointer; font-size:22px; font-weight:bold; line-height:1; display:flex; align-items:center; justify-content:center; z-index:5;" title="عرض المنتج والإضافة للسلة">+</button>`}
+                                        </div>
+                                        <div class="card-body">
+                                            <span class="card-category">${escapeHtml(p.category)}</span>
+                                            <h3 class="card-name" data-testid="card-name-link" data-product-id="${p.id}" onclick="event.stopPropagation(); openProductModal('${p.id}')">${escapeHtml(p.name)}</h3>
+                                            <div class="card-footer">
+                                                <span class="card-price">${p.price} <span>EGP</span></span>
+                                            </div>
+                                        </div>
+                                    </div>`).join("")}
+                            </div>`
+                        : `<p style="color:var(--muted); text-align:center; padding:20px;">لا توجد منتجات في هذا المجلد حالياً.</p>`;
+
+                    return `${folderCard}
+                        <div style="grid-column:1/-1; background:var(--card-bg); border:1px solid var(--amber); border-radius:10px; padding:18px; margin-top:-6px;">
+                            ${productsHtml}
+                        </div>`;
+                }).join("");
+            };
+
+            window.__toggleFolder = function (folderId) {
+                expandedFolderId = expandedFolderId === folderId ? null : folderId;
+                renderPublicFolders();
+            };
+
+            async function migrateLocalFoldersIfNeeded() {
+                if (!window.voltFirebase?.getFolders || !window.voltFirebase?.saveFolder) return;
+                try {
+                    const local = JSON.parse(localStorage.getItem(FOLDERS_STORAGE_KEY) || "[]");
+                    if (!local.length) return;
+                    const remote = await window.voltFirebase.getFolders();
+                    if (!remote.length) {
+                        for (const folder of local) {
+                            await window.voltFirebase.saveFolder(folder);
+                        }
+                    }
+                } catch (err) {
+                    console.warn("migrateLocalFoldersIfNeeded: فشل", err);
+                }
+            }
+
+            function init() {
+                document.getElementById("folderCreateForm")?.addEventListener("submit", handleFolderCreateSubmit);
+                const start = async () => {
+                    await migrateLocalFoldersIfNeeded();
+                    await renderPublicFolders();
+                };
+                if (window.voltFirebase && window.voltFirebase.getFolders) {
+                    start();
+                } else {
+                    window.addEventListener("voltFirebaseReady", start, { once: true });
+                    start();
+                }
+            }
+
+            if (document.readyState === "loading") {
+                document.addEventListener("DOMContentLoaded", init);
+            } else {
+                init();
+            }
+        })();
+    </script>
+
+    <script src="promoCodeEngine.js"></script>
+    <script src="cart-promo.js"></script>
+    <script src="script1.js"></script>
+    <script src="Order-verify · js"></script>
+    <!-- FIX: script2.js was missing from this load order entirely.
+             It holds the only auth-gated #adminPanelBtn click handler
+             (checks currentUser.role === "admin" via sessionStorage before
+             doing anything) — the unguarded duplicate handler that used to
+             live in script.js has been removed. Without this tag, neither
+             handler would run and the button would silently do nothing. -->
+    <script src="script2.js"></script>
+    <script src="new-script.js"></script>
+    <script src="scroll-split.js"></script>
+    <!-- نافذة إدارة أكواد الخصم -->
+    <div id="promo-modal"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; justify-content: center; align-items: center; direction: rtl;">
+
+        <div
+            style="background: #1e1e1e; padding: 20px; border-radius: 10px; width: 90%; max-width: 700px; max-height: 80vh; overflow-y: auto; position: relative; border: 1px solid #333;">
+
+            <!-- زرار إغلاق النافذة -->
+            <button onclick="document.getElementById('promo-modal').style.display = 'none'"
+                style="position: absolute; top: 15px; left: 15px; background: #ff4444; border: none; color: white; width: 30px; height: 30px; border-radius: 5px; cursor: pointer; font-weight: bold;">X</button>
+
+            <!-- العنوان -->
+            <h2
+                style="color: #ffbf00; margin-bottom: 20px; text-align: center; border-bottom: 1px solid #333; padding-bottom: 10px;">
+                🎫 لوحة إدارة أكواد الخصم</h2>
+
+            <!-- المكان اللي هتنزل فيه الأكواد تلقائي -->
+            <div id="promo-list-container"></div>
+
+        </div>
+    </div>
+    <section class="hero">
+        <p>Scroll down ↓</p>
+    </section>
+
+    <p class="hint">scroll down to see card stack</p>
+
+    <section class="stack" id="stack">
+        <div class="stack__item">
+            <article class="card">
+                <img src="./VOLT2.png" alt="Product">
+                <div class="card__caption">
+                    <h3>Mountain Ridge</h3>
+                </div>
+            </article>
+        </div>
+
+        <div class="stack__item">
+            <article class="card">
+                <img class="card__img"
+                    src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' fill='%23121212'%3E%3Ctext x='50%25' y='50%25' fill='%23ff7a00' font-size='32' text-anchor='middle' dy='.3em' font-family='sans-serif'%3EVOLT%3C/text%3E%3C/svg%3E"
+                    alt="product2">
+                <div class="card__caption">
+                    <h3>Forest Path</h3>
+                </div>
+            </article>
+        </div>
+
+        <div class="stack__item">
+            <article class="card">
+                <img class="card__img"
+                    src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' fill='%23121212'%3E%3Ctext x='50%25' y='50%25' fill='%23ff7a00' font-size='32' text-anchor='middle' dy='.3em' font-family='sans-serif'%3EVOLT%3C/text%3E%3C/svg%3E"
+                    alt="product3">
+                <div class="card__caption">
+                    <h3>Ocean Cliff</h3>
+                </div>
+            </article>
+        </div>
+    </section>
+
+    <section class="hero hero--end">
+        <p>End of stack</p>
+    </section>
+
+    <footer>
+        <p>جميع الحقوق محفوظة &copy; 2026 لمتجر <span>VOLT</span></p>
+    </footer>
+
+
+</body>
+
+</html>

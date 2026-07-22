@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // المنتجات — قراءة للجميع، كتابة للأدمن فقط
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // المستخدمون — قراءة/كتابة للمستخدم نفسه، قراءة/حذف للأدمن
+    match /users/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    // الأوردرات — إنشاء للمستخدم المسجل، إدارة للأدمن
+    match /orders/{orderId} {
+      allow read: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // أكواد الخصم — قراءة للجميع، إدارة للأدمن
+    match /promoCodes/{codeId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // المفضلة — للمستخدم نفسه فقط
+    match /favorites/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+
+    // تصنيفات المتجر — قراءة للجميع، إدارة للأدمن
+    match /folders/{folderId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // المهام — للأدمن فقط
+    match /tasks/{taskId} {
+      allow read, write: if isAdmin();
+    }
+  }
+}
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+ 
+    // helpers
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+ 
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+ 
+    function isAdmin() {
+      return isAuthenticated()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+ 
+    function isValidString(v) {
+      return v is string && v.size > 0 && v.size <= 2000;
+    }
+ 
+    // users: only admins can list; authenticated users can read/write their own doc.
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow create: if isOwner(uid)
+        && request.resource.data.keys().hasAll(["email", "role", "createdAt"])
+        && request.resource.data.role == "client";
+      allow update: if isOwner(uid) || isAdmin();
+      allow delete: if isAdmin();
+    }
+ 
+    // orders: only admins can list; user can read their own order by uid.
+    match /orders/{orderId} {
+      allow read: if isAdmin()
+        || (isAuthenticated() && resource.data.uid == request.auth.uid);
+      allow create: if isAuthenticated()
+        && request.resource.data.uid == request.auth.uid
+        && isValidString(request.resource.data.orderId)
+        && isValidString(request.resource.data.customer.name);
+      allow update, delete: if isAdmin();
+    }
+ 
+    // promoCodes: readable by anyone (needed for anonymous/guest cart validation);
+    // only admins can write.
+    match /promoCodes/{codeId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+ 
+    // favorites: only the owner can read/write.
+    match /favorites/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+ 
+    // products: readable by anyone; only admins can write.
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
+ 
