@@ -5,6 +5,19 @@
    [data-category="X"]. Fully attribute-driven — add new categories in HTML
    only; this script never needs to change.
 
+   Also supports an OPTIONAL price range slider, matched against each card's
+   [data-price="N"]. Both filters are attribute-driven and both funnel into
+   the SAME applyFilter() call — there is exactly one function that decides
+   whether a card is visible, combining "does the category match" AND "is
+   the price within range". This is deliberate: two independent functions
+   each calling showCard()/hideCard() on their own would let a card's
+   visibility race between them (e.g. the price filter shows a card the
+   category filter just hid, or vice versa, depending on call order).
+   Instead the slider's input handler re-reads the currently active
+   category button and calls applyFilter(category) — same as a category
+   click does — so applyFilter() always has full context and there is only
+   ever one place that touches showCard()/hideCard().
+
    REQUIRED HTML CONTRACT:
    FIX #16: data-testid required on both button and card elements below.
    No HTML file was in scope for this pass, so these attributes can't be
@@ -16,11 +29,23 @@
          <button data-filter="arduino" data-testid="filter-button">Arduino</button>
          <button data-filter="medical" data-testid="filter-button">Medical</button>
        </div>
-   - A product grid container, e.g.:
+   - A product grid container, with each card carrying its price for the
+     slider to read (omit data-price on a card and it is treated as always
+     within range — the slider only excludes cards that explicitly opt in
+     with a numeric data-price):
        <div id="productGrid">
-         <div class="product-card" data-category="arduino" data-testid="product-card">...</div>
-         <div class="product-card" data-category="medical" data-testid="product-card">...</div>
+         <div class="product-card" data-category="arduino" data-price="450" data-testid="product-card">...</div>
+         <div class="product-card" data-category="medical" data-price="85" data-testid="product-card">...</div>
        </div>
+   - An OPTIONAL price slider, single <input type="range">, e.g.:
+       <input type="range" id="priceFilterSlider" data-testid="price-filter-slider"
+              min="0" max="1000" step="10" value="1000">
+       <output id="priceFilterValue" data-testid="price-filter-value"></output>
+     If #priceFilterSlider is not present in the DOM, price filtering is
+     silently skipped — category filtering alone still works exactly as
+     before. The slider represents a single MAXIMUM price (0..max, matching
+     the common "up to X" shopping pattern); a card passes if it has no
+     data-price, or if data-price <= the slider's current value.
 
    WHY EVENT DELEGATION (not per-button addEventListener):
    Attaching a listener to each button at setup time only covers buttons
@@ -30,7 +55,11 @@
    Delegation attaches ONE listener to the stable parent container. Clicks
    bubble up to it regardless of when the button was added, so new
    categories work automatically with zero JS changes — which is exactly
-   what requirement #5 asks for.
+   what requirement #5 asks for. The price slider is a single, known
+   element rather than a dynamic list, so it's bound directly the same way
+   showCard/hideCard already bind directly to known DOM APIs — no
+   delegation needed there, but it still funnels into the one applyFilter()
+   entry point rather than becoming a second mechanism.
 ========================================================================== */
 
 function initProductFilter(config = {}) {
@@ -38,6 +67,11 @@ function initProductFilter(config = {}) {
     const productContainerSelector = config.productContainerSelector || "#productGrid";
     const productSelector          = config.productSelector          || "[data-category]";
     const activeClass              = config.activeClass              || "active";
+    // Optional — price filtering is skipped entirely if this element isn't
+    // in the DOM, so passing a wrong/absent selector here degrades to
+    // "category filtering only" rather than throwing.
+    const priceSliderSelector      = config.priceSliderSelector      || "#priceFilterSlider";
+    const priceOutputSelector      = config.priceOutputSelector      || "#priceFilterValue";
 
     const filterContainer  = document.querySelector(filterContainerSelector);
     const productContainer = document.querySelector(productContainerSelector);
@@ -47,6 +81,12 @@ function initProductFilter(config = {}) {
         console.warn("initProductFilter: required filter or product container not found. Filter not initialized.");
         return;
     }
+
+    // Optional — unlike filterContainer/productContainer above, a missing
+    // slider is not an init failure. It just means this page has no price
+    // filter UI; category filtering still works standalone.
+    const priceSlider = document.querySelector(priceSliderSelector);
+    const priceOutput = document.querySelector(priceOutputSelector);
 
     // FIX #8: WeakMap tracks per-card hide state for a reliable guard in
     // the setTimeout callback, replacing the fragile opacity string comparison.
@@ -80,12 +120,63 @@ function initProductFilter(config = {}) {
         applyFilter(targetCategory);
     });
 
+    // Price slider — optional. Reads the currently active category button
+    // (same lookup api.refresh() already uses below) and re-runs
+    // applyFilter() with it, so a slider move re-evaluates through the
+    // exact same category+price logic as a button click would. "input"
+    // fires continuously while dragging (live filtering), not just on
+    // release, matching how the category buttons filter immediately on click.
+    if (priceSlider) {
+        const updatePriceOutput = () => {
+            if (priceOutput) {
+                // textContent, not innerHTML — priceSlider.value is a
+                // browser-controlled numeric string from a range input,
+                // but textContent costs nothing extra and keeps this
+                // consistent with never assuming a value is safe for innerHTML.
+                priceOutput.textContent = priceSlider.value;
+            }
+        };
+
+        priceSlider.addEventListener("input", () => {
+            updatePriceOutput();
+            const activeBtn = filterContainer.querySelector(`[data-filter].${activeClass}`);
+            const currentCategory = activeBtn ? activeBtn.getAttribute("data-filter") : "all";
+            applyFilter(currentCategory);
+        });
+
+        // Reflect the slider's initial value (e.g. value="1000" set in HTML)
+        // before any interaction, so the output isn't blank on first paint.
+        updatePriceOutput();
+    }
+
     function applyFilter(targetCategory) {
         const products = productContainer.querySelectorAll(productSelector);
+        // Read once per applyFilter() call, not once per card — the slider's
+        // value can't change mid-loop since this is synchronous, so a single
+        // read up front avoids querying priceSlider.value N times for N cards.
+        const maxPrice = priceSlider ? Number(priceSlider.value) : null;
 
         products.forEach((card) => {
             const cardCategory = card.getAttribute("data-category");
-            const shouldShow = targetCategory === "all" || cardCategory === targetCategory;
+            const categoryMatches = targetCategory === "all" || cardCategory === targetCategory;
+
+            // Cards without a data-price attribute are never excluded by
+            // price — the slider only constrains cards that opted in with
+            // a numeric price. This matches how data-category is already
+            // optional-by-omission via productSelector's "[data-category]"
+            // default (a card outside that selector is never touched here
+            // at all, category or price).
+            let priceMatches = true;
+            if (maxPrice !== null && card.hasAttribute("data-price")) {
+                const cardPrice = Number(card.getAttribute("data-price"));
+                // NaN-safe: a malformed data-price (non-numeric string)
+                // fails the <= comparison either direction, so it's
+                // treated as "does not match" rather than silently
+                // passing through — surfaces bad data instead of hiding it.
+                priceMatches = !Number.isNaN(cardPrice) && cardPrice <= maxPrice;
+            }
+
+            const shouldShow = categoryMatches && priceMatches;
 
             if (shouldShow) {
                 showCard(card);

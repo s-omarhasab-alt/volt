@@ -80,6 +80,7 @@ function saveCart() {
 let cart = loadCart();
 let currentUser = null; // يحمل بيانات اليوزر الحالية أو الأدمن
 let activeCategory = "all"; // التصنيف النشط في شريط الفلاتر
+let activePriceMax = null; // الحد الأقصى للسعر من السلايدر — null يعني بدون فلترة سعر
 const WA_NUMBER = "201111884419";
 
 // تنظيف أي نص قبل حقنه في innerHTML لمنع DOM-based XSS (نفس الطريقة
@@ -106,9 +107,11 @@ async function hashPassword(password) {
 ========================================================================== */
 document.addEventListener("DOMContentLoaded", () => {
     initSplashAnimation();
+    renderProductSkeletons();
     getProducts().then(products => renderProducts(products));
     setupFilters();
     setupSearch();
+    setupPriceFilter();
     setupCartSystem();
     updateCartBadge();
     typeWriter();
@@ -135,7 +138,19 @@ function initSplashAnimation() {
     wordmark.innerHTML = "VOLT".split("").map(ch => `<span class="letter">${ch}</span>`).join("");
     wordmark.querySelectorAll(".letter").forEach((l, i) => setTimeout(() => l.classList.add("go"), 400 + i * 450));
 }
-
+function renderProductSkeletons(count = 8) {
+    const c = document.getElementById("products");
+    if (!c) return;
+    c.innerHTML = Array.from({ length: count }).map(() => `
+        <div class="skeleton-card" aria-hidden="true">
+            <div class="skeleton-img"></div>
+            <div class="skeleton-body">
+                <div class="skeleton-line" style="width:35%;height:8px;"></div>
+                <div class="skeleton-line skeleton-title"></div>
+                <div class="skeleton-line skeleton-price"></div>
+            </div>
+        </div>`).join('');
+}
 /* ==========================================================================
    PRODUCTS RENDER & MANAGEMENT
 ========================================================================== */
@@ -178,18 +193,6 @@ function toggleDetailsView(id) {
     if (el) el.style.display = el.style.display === "block" ? "none" : "block";
 }
 
-function setupFilters() {
-    const btns = document.querySelectorAll(".filter-btn");
-    btns.forEach(btn => btn.addEventListener("click", async () => {
-        btns.forEach(b => b.classList.remove("active")); btn.classList.add("active");
-        activeCategory = btn.getAttribute("data-category");
-        const inp = document.getElementById("searchInput");
-        if (inp) inp.value = "";
-        const allProds = await getProducts();
-        renderProducts(activeCategory === "all" ? allProds : allProds.filter(p => p.category === activeCategory));
-    }));
-}
-
 function productMatchesSearch(p, q) {
     if (!q) return true;
     const name = (p.name || "").toLowerCase();
@@ -200,18 +203,72 @@ function productMatchesSearch(p, q) {
     return name.includes(q) || desc.includes(q) || cat.includes(q) || emoji.includes(q) || specs.includes(q);
 }
 
+// نقطة القرار الوحيدة لكل الفلاتر مجتمعة (تصنيف + بحث + سعر) — نفس مبدأ
+// applyFilter() في filter.js: بدل ما كل فلتر يعمل renderProducts() بمفرده
+// بمعزل عن الفلاتر التانية (وبالتالي يمسح أثرها)، الكل بينادي الدالة دي،
+// اللي بتقرأ الحالة النشطة التلاتة مع بعض وترندر مرة واحدة بس.
+async function applyProductFilters() {
+    const allProds = await getProducts();
+    let filtered = activeCategory === "all" ? allProds : allProds.filter(p => p.category === activeCategory);
+
+    if (typeof activePriceMax === "number") {
+        filtered = filtered.filter(p => typeof p.price !== "number" || p.price <= activePriceMax);
+    }
+
+    const inp = document.getElementById("searchInput");
+    const q = inp ? inp.value.toLowerCase().trim() : "";
+    if (q) filtered = filtered.filter(p => productMatchesSearch(p, q));
+
+    renderProducts(filtered);
+}
+
+function setupFilters() {
+    const btns = document.querySelectorAll(".filter-btn");
+    btns.forEach(btn => btn.addEventListener("click", () => {
+        btns.forEach(b => b.classList.remove("active")); btn.classList.add("active");
+        activeCategory = btn.getAttribute("data-category");
+        const inp = document.getElementById("searchInput");
+        if (inp) inp.value = "";
+        applyProductFilters();
+    }));
+}
+
 function setupSearch() {
     const inp = document.getElementById("searchInput"), btn = document.getElementById("searchBtn");
-    const go = async () => {
-        const q = inp.value.toLowerCase().trim();
-        const allProds = await getProducts();
-        let filtered = activeCategory === "all" ? allProds : allProds.filter(p => p.category === activeCategory);
-        if (q) filtered = filtered.filter(p => productMatchesSearch(p, q));
-        renderProducts(filtered);
-    };
+    const go = () => applyProductFilters();
     btn?.addEventListener("click", go);
     inp?.addEventListener("keyup", e => { if (e.key === "Enter") go(); });
     inp?.addEventListener("input", go);
+}
+
+// سلايدر السعر — اختياري تماماً زي في filter.js: لو مفيش منتجات بسعر
+// رقمي، أو العنصر مش موجود في الصفحة، الفلترة بتتجاهل خالص من غير أي
+// تأثير على فلترة التصنيف/البحث. الحد الأقصى (max) بيتحسب من بيانات
+// المنتجات الحقيقية (مش رقم ثابت) عشان يفضل صحيح مهما الأدمن ضاف منتجات
+// بأي سعر.
+async function setupPriceFilter() {
+    const slider = document.getElementById("priceFilterSlider");
+    const output = document.getElementById("priceFilterValue");
+    if (!slider) return;
+
+    const allProds = await getProducts();
+    const prices = allProds.map(p => Number(p.price)).filter(n => !Number.isNaN(n));
+    const maxPrice = prices.length ? Math.max(...prices) : Number(slider.max) || 1000;
+
+    // تقريب لأعلى مضاعف لـ 10 عشان الـ step يفضل متسق، ونضيف هامش بسيط
+    // (10%) عشان أغلى منتج يفضل ظاهر لما السلايدر يكون في أقصى اليمين
+    // تماماً، مش مستبعد بسبب تقريب حسابي.
+    const roundedMax = Math.ceil((maxPrice * 1.1) / 10) * 10;
+    slider.max = String(roundedMax || 1000);
+    slider.value = slider.max;
+    activePriceMax = Number(slider.value);
+    if (output) output.textContent = slider.value;
+
+    slider.addEventListener("input", () => {
+        activePriceMax = Number(slider.value);
+        if (output) output.textContent = slider.value;
+        applyProductFilters();
+    });
 }
 
 async function openProductModal(id) {
@@ -219,7 +276,7 @@ async function openProductModal(id) {
     const p = allProds.find(x => String(x.id) === String(id)); if (!p) return;
     const rows = p.specs ? Object.entries(p.specs).map(([k, v]) => `<div class="spec-row"><span>${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`).join('') : '';
     const maxQty = (p.stock !== undefined && p.stock > 0) ? p.stock : 1;
-    document.getElementById("modalInnerContent").innerHTML = `
+    document.getElementById("productPageInnerContent").innerHTML = `
         <div class="modal-img">${p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="max-width:120px;border-radius:8px;">` : escapeHtml(p.emoji)}</div>
         <div class="modal-info">
             <span class="modal-cat">${escapeHtml(p.category)}</span>
@@ -238,10 +295,15 @@ async function openProductModal(id) {
             <div class="modal-actions">
                 <button class="btn-primary" id="modalAddBtn-${p.id}" data-testid="modal-add-to-cart-btn-${p.id}" onclick="addModalQtyToCart('${p.id}')">Add item</button>
                 <button class="btn-secondary" data-testid="modal-share-link-${p.id}" onclick="copyProductLink('${p.id}')" title="نسخ رابط المنتج">🔗 نسخ رابط المنتج</button>
-                <a href="#" class="btn-secondary" onclick="closeModal();return false;">العودة للمتجر</a>
+                <a href="#" class="btn-secondary" onclick="closeProductPage();return false;">العودة للمتجر</a>
             </div>
+        </div>
+        <div class="product-sticky-bar" data-testid="product-sticky-bar-${p.id}">
+            <span class="product-sticky-bar__price">${p.price} <small>EGP</small></span>
+            <button class="btn-primary" data-testid="sticky-add-to-cart-btn-${p.id}" onclick="addModalQtyToCart('${p.id}')">Add item</button>
         </div>`;
-    document.getElementById("modal-overlay").classList.add("open");
+    document.getElementById("product-page").classList.add("open");
+    window.scrollTo(0, 0);
 
     // نحدّث الـ URL بدون إعادة تحميل الصفحة، عشان يبقى للمنتج رابط
     // مباشر قابل للمشاركة، ونحدّث عنوان الصفحة عشان يبان في تبويب
@@ -253,6 +315,8 @@ async function openProductModal(id) {
 }
 
 // نسخ رابط مباشر للمنتج الحالي إلى الحافظة، لمشاركته خارج الموقع.
+// الرابط نفسه بيفتح صفحة المنتج الكاملة (نفس مسار #/product/{id})،
+// مش المودال القديم — نفس صيغة الرابط، اختلف بس اللي بيتفتح بيه.
 function copyProductLink(id) {
     const url = `${location.origin}${location.pathname}#/product/${encodeURIComponent(id)}`;
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -265,7 +329,9 @@ function copyProductLink(id) {
 }
 
 // عند فتح الموقع مباشرة برابط منتج (#/product/{id})، أو عند تغيير الـ
-// hash يدويًا، نفتح مودال المنتج المطابق تلقائيًا.
+// hash يدويًا، نفتح صفحة المنتج الكاملة المطابقة تلقائيًا. الـ hash
+// contract نفسه ما اتغيّرش — بس openProductModal() بقى بيرندر جوه
+// #product-page (صفحة كاملة) بدل #modal-overlay (أوفرلي).
 async function handleProductRouteFromHash() {
     const match = location.hash.match(/^#\/product\/(.+)$/);
     if (!match) return;
@@ -275,7 +341,7 @@ async function handleProductRouteFromHash() {
 
 window.addEventListener("hashchange", handleProductRouteFromHash);
 
-// متحكم الكمية جوه مودال المنتج — بيغيّر القيمة المعروضة فقط، ضمن حدود المخزون المتاح
+// متحكم الكمية جوه صفحة المنتج — بيغيّر القيمة المعروضة فقط، ضمن حدود المخزون المتاح
 function changeModalQty(id, delta, maxQty) {
     const el = document.getElementById(`modalQtyVal-${id}`);
     if (!el) return;
@@ -286,27 +352,26 @@ function changeModalQty(id, delta, maxQty) {
     el.textContent = val;
 }
 
-// الفعل النهائي لزرار "Add item" جوه المودال: يضيف المنتج للسلة بالكمية المختارة فعليًا، ثم يقفل المودال
+// الفعل النهائي لزرار "Add item" جوه صفحة المنتج: يضيف المنتج للسلة بالكمية المختارة فعليًا، ثم يرجع للمتجر
 async function addModalQtyToCart(id) {
     const el = document.getElementById(`modalQtyVal-${id}`);
     const qty = el ? (parseInt(el.textContent, 10) || 1) : 1;
     for (let i = 0; i < qty; i++) {
         await addToCart(null, id);
     }
-    closeModal();
+    closeProductPage();
 }
 
-function closeModal() {
-    document.getElementById("modal-overlay").classList.remove("open");
-    // نرجّع الـ URL وعنوان الصفحة لحالتهم الأصليين لما المودال يتقفل،
-    // عشان الـ hash متفضلش عالقة على منتج بعد الرجوع للمتجر.
+function closeProductPage() {
+    document.getElementById("product-page").classList.remove("open");
+    // نرجّع الـ URL وعنوان الصفحة لحالتهم الأصليين لما نرجع للمتجر،
+    // عشان الـ hash متفضلش عالقة على منتج بعد الرجوع.
     if (location.hash.startsWith("#/product/") && history.replaceState) {
         history.replaceState(null, "", location.pathname + location.search);
     }
     document.title = "VOLT | متجر الإلكترونيات والقطع الذكية";
 }
-document.getElementById("closeModalBtn")?.addEventListener("click", closeModal);
-document.getElementById("modal-overlay")?.addEventListener("click", e => { if (e.target === document.getElementById("modal-overlay")) closeModal(); });
+document.getElementById("closeProductPageBtn")?.addEventListener("click", closeProductPage);
 
 // دالة حذف منتج للأدمن فقط
 async function deleteProduct(event, id) {
@@ -476,11 +541,18 @@ async function updateCartUI() {
     if (!c || !t) return;
 
     if (!cart.length) {
-        c.innerHTML = `<p style="text-align:center;color:var(--muted);padding:20px 0;">السلة فارغة حالياً</p>`;
-        t.innerHTML = `0 <span>EGP</span>`;
-        return;
-    }
-
+    c.innerHTML = `
+        <div style="text-align:center;padding:20px 0;">
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);margin-bottom:10px;" aria-hidden="true">
+                <path d="M3 4h2l2.4 12.2a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.6L21 8H6.2"/>
+                <circle cx="10" cy="20" r="1.4" fill="var(--green)" stroke="none"/>
+                <circle cx="17" cy="20" r="1.4" fill="var(--green)" stroke="none"/>
+            </svg>
+            <p style="margin:0;color:var(--muted);">السلة فارغة حالياً</p>
+        </div>`;
+    t.innerHTML = `0 <span>EGP</span>`;
+    return;
+}
     let total = 0;
     c.innerHTML = cart.map((item, i) => {
         total += item.price;
@@ -718,19 +790,31 @@ async function wizNext() {
                 isPhoneUsed = !!(await window.voltFirebase.findUserByIdNum(v));
             } catch (err) {
                 console.error("wizNext: فشل التحقق من رقم الهاتف في Firestore", err);
-                alert("⚠️ تعذر التحقق من الرقم حالياً، تحقق من الاتصال وحاول مرة أخرى");
+                let errEl = document.getElementById("step3-err");
+                if (errEl) {
+                    errEl.textContent = "⚠️ تعذر التحقق من الرقم حالياً، تحقق من الاتصال وحاول مرة أخرى";
+                    errEl.classList.add("show");
+                }
                 document.getElementById("wiz-id").style.border = "2px solid red";
                 return;
             }
         }
         // التأكد إن الرقم 11 رقم وبيبدأ بـ 01
         if (v.length !== 11 || !v.startsWith("01")) {
-            alert("⚠️ يرجى إدخال رقم هاتف صحيح يتكون من 11 رقم ويبدأ بـ 01");
+            let errEl = document.getElementById("step3-err");
+            if (errEl) {
+                errEl.textContent = "⚠️ يرجى إدخال رقم هاتف صحيح يتكون من 11 رقم ويبدأ بـ 01";
+                errEl.classList.add("show");
+            }
             document.getElementById("wiz-id").style.border = "2px solid red";
             return; // الفرامل اللي بتمنعه يكمل
         }
         if (isPhoneUsed) {
-            alert("🛑 الرقم ده مسجل بيه حساب قبل كده! يرجى استخدام رقم آخر أو تسجيل الدخول.");
+            let errEl = document.getElementById("step3-err");
+            if (errEl) {
+                errEl.textContent = "🛑 الرقم ده مسجل بيه حساب قبل كده! يرجى استخدام رقم آخر أو تسجيل الدخول.";
+                errEl.classList.add("show");
+            }
             document.getElementById("wiz-id").style.border = "2px solid red";
             return; // الفرامل اللي بتمنعه يكمل
         }
@@ -768,7 +852,11 @@ async function wizNext() {
                 }
             }
             if (existingEmail) {
-                alert("🛑 الإيميل ده مسجل عليه حساب قبل كده! حاول تسجيل الدخول.");
+                let errEl = document.getElementById("step4-err");
+                if (errEl) {
+                    errEl.textContent = "🛑 الإيميل ده مسجل عليه حساب قبل كده! حاول تسجيل الدخول.";
+                    errEl.classList.add("show");
+                }
                 document.getElementById("wiz-phone").style.border = "2px solid red";
                 return;
             }
@@ -777,7 +865,12 @@ async function wizNext() {
     } else if (wizStep === 5) {
         const v = document.getElementById("wiz-pass").value;
         if (v.length < 8) {
-            alert("⚠️ كلمة السر يجب أن تكون 8 أحرف أو أكثر لحماية حسابك!");
+            let errEl = document.getElementById("step5-err");
+            if (errEl) {
+                errEl.textContent = "⚠️ كلمة السر يجب أن تكون 8 أحرف أو أكثر لحماية حسابك!";
+                errEl.classList.add("show");
+            }
+            document.getElementById("wiz-pass").style.border = "2px solid red";
             return;
         }
         wizData.pass = v;
@@ -1254,97 +1347,102 @@ async function renderAdminDashboardKPIs() {
     <div style="direction:rtl;">
  
         <!-- KPIs -->
-        <h4 style="color:var(--amber); margin-bottom:14px; font-family:'Rajdhani',sans-serif; font-size:18px;">⚡ المؤشرات السريعة</h4>
-        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(140px,1fr)); gap:12px; margin-bottom:24px;">
-            <div style="background:#0e140e; border:1px solid var(--green); border-radius:10px; padding:14px; text-align:center;">
-                <div style="font-size:22px; font-weight:bold; color:var(--green); font-family:'Rajdhani',sans-serif;">${totalRevenue.toLocaleString()}</div>
-                <div style="font-size:11px; color:var(--muted); margin-top:4px;">💰 إجمالي المبيعات (EGP)</div>
+        <h4 style="color:var(--amber); margin-bottom:16px; font-family:'Rajdhani',sans-serif; font-size:18px; letter-spacing:0.5px;">⚡ المؤشرات السريعة</h4>
+        <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; margin-bottom:28px;">
+            <div style="background:var(--card-bg); border:1px solid var(--green); border-radius:10px; padding:16px 14px; text-align:center;">
+                <div style="font-size:24px; font-weight:700; color:var(--green); font-family:'Rajdhani',sans-serif; line-height:1.1;">${totalRevenue.toLocaleString()}</div>
+                <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">💰 إجمالي المبيعات (EGP)</div>
             </div>
-            <div style="background:#0e140e; border:1px solid var(--amber); border-radius:10px; padding:14px; text-align:center;">
-                <div style="font-size:22px; font-weight:bold; color:var(--amber); font-family:'Rajdhani',sans-serif;">${totalOrders}</div>
-                <div style="font-size:11px; color:var(--muted); margin-top:4px;">📦 عدد الطلبات</div>
+            <div style="background:var(--card-bg); border:1px solid var(--amber); border-radius:10px; padding:16px 14px; text-align:center;">
+                <div style="font-size:24px; font-weight:700; color:var(--amber); font-family:'Rajdhani',sans-serif; line-height:1.1;">${totalOrders}</div>
+                <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">📦 عدد الطلبات</div>
             </div>
-            <div style="background:#0e140e; border:1px solid #4a90e2; border-radius:10px; padding:14px; text-align:center;">
-                <div style="font-size:22px; font-weight:bold; color:#4a90e2; font-family:'Rajdhani',sans-serif;">${totalCustomers}</div>
-                <div style="font-size:11px; color:var(--muted); margin-top:4px;">👥 عدد العملاء</div>
+            <div style="background:var(--card-bg); border:1px solid #4a90e2; border-radius:10px; padding:16px 14px; text-align:center;">
+                <div style="font-size:24px; font-weight:700; color:#4a90e2; font-family:'Rajdhani',sans-serif; line-height:1.1;">${totalCustomers}</div>
+                <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">👥 عدد العملاء</div>
             </div>
-            <div style="background:#0e140e; border:1px solid var(--green); border-radius:10px; padding:14px; text-align:center;">
-                <div style="font-size:22px; font-weight:bold; color:var(--green); font-family:'Rajdhani',sans-serif;">${todayRevenue.toLocaleString()}</div>
-                <div style="font-size:11px; color:var(--muted); margin-top:4px;">☀️ أرباح اليوم (EGP)</div>
+            <div style="background:var(--card-bg); border:1px solid var(--green); border-radius:10px; padding:16px 14px; text-align:center;">
+                <div style="font-size:24px; font-weight:700; color:var(--green); font-family:'Rajdhani',sans-serif; line-height:1.1;">${todayRevenue.toLocaleString()}</div>
+                <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">☀️ أرباح اليوم (EGP)</div>
             </div>
-            <div style="background:#0e140e; border:1px solid var(--amber); border-radius:10px; padding:14px; text-align:center;">
-                <div style="font-size:22px; font-weight:bold; color:var(--amber); font-family:'Rajdhani',sans-serif;">${monthRevenue.toLocaleString()}</div>
-                <div style="font-size:11px; color:var(--muted); margin-top:4px;">📅 أرباح الشهر (EGP)</div>
+            <div style="background:var(--card-bg); border:1px solid var(--amber); border-radius:10px; padding:16px 14px; text-align:center;">
+                <div style="font-size:24px; font-weight:700; color:var(--amber); font-family:'Rajdhani',sans-serif; line-height:1.1;">${monthRevenue.toLocaleString()}</div>
+                <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">📅 أرباح الشهر (EGP)</div>
             </div>
-            <div style="background:#0e140e; border:1px solid var(--red); border-radius:10px; padding:14px; text-align:center;">
-                <div style="font-size:22px; font-weight:bold; color:var(--red); font-family:'Rajdhani',sans-serif;">${lowStock.length}</div>
-                <div style="font-size:11px; color:var(--muted); margin-top:4px;">⚠️ منتجات قليلة المخزون</div>
+            <div style="background:var(--card-bg); border:1px solid var(--red); border-radius:10px; padding:16px 14px; text-align:center;">
+                <div style="font-size:24px; font-weight:700; color:var(--red); font-family:'Rajdhani',sans-serif; line-height:1.1;">${lowStock.length}</div>
+                <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">⚠️ منتجات قليلة المخزون</div>
             </div>
         </div>
- 
-        <!-- أكثر المنتجات مبيعاً -->
-        <h4 style="color:var(--green); margin-bottom:10px; font-family:'Rajdhani',sans-serif;">⭐ أكثر المنتجات مبيعاً</h4>
-        <div style="background:#0e140e; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:20px;">
+
+        <div style="border-top:1px solid var(--border); padding-top:22px; margin-bottom:22px;">
+        <h4 style="color:var(--green); margin-bottom:12px; font-family:'Rajdhani',sans-serif; font-size:15px; letter-spacing:0.3px;">⭐ أكثر المنتجات مبيعاً</h4>
+        <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:6px 14px;">
             ${topProducts.length ? topProducts.map((p, i) => `
-                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #1a241a;">
-                    <span style="color:var(--text);">${i + 1}. ${escapeHtml(p[0])}</span>
-                    <span style="color:var(--green); font-weight:bold;">${p[1]} طلب</span>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; ${i < topProducts.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
+                    <span style="color:var(--text); font-size:13px;"><span style="color:var(--muted);">${i + 1}.</span> ${escapeHtml(p[0])}</span>
+                    <span style="color:var(--green); font-weight:700; font-size:13px;">${p[1]} طلب</span>
                 </div>`).join("")
-            : `<p style="color:var(--muted); text-align:center; padding:10px;">لا توجد مبيعات بعد</p>`}
+            : `<p style="color:var(--muted); text-align:center; padding:14px;">لا توجد مبيعات بعد</p>`}
         </div>
- 
-        <!-- المنتجات المطلوبة للشراء -->
-        <h4 style="color:var(--amber); margin-bottom:10px; font-family:'Rajdhani',sans-serif;">🛒 منتجات محتاج تشتريها (من الطلبات المعلقة)</h4>
-        <div style="background:#0e140e; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:20px;">
+        </div>
+
+        <div style="border-top:1px solid var(--border); padding-top:22px; margin-bottom:22px;">
+        <h4 style="color:var(--amber); margin-bottom:12px; font-family:'Rajdhani',sans-serif; font-size:15px; letter-spacing:0.3px;">🛒 منتجات محتاج تشتريها (من الطلبات المعلقة)</h4>
+        <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:6px 14px;">
             ${neededProducts.length ? neededProducts.map((p, i) => `
-                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #1a241a;">
-                    <span style="color:var(--text);">${i + 1}. ${escapeHtml(p[0])}</span>
-                    <span style="color:var(--amber); font-weight:bold;">${p[1]} قطعة مطلوبة</span>
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; ${i < neededProducts.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
+                    <span style="color:var(--text); font-size:13px;"><span style="color:var(--muted);">${i + 1}.</span> ${escapeHtml(p[0])}</span>
+                    <span style="color:var(--amber); font-weight:700; font-size:13px;">${p[1]} قطعة مطلوبة</span>
                 </div>`).join("")
-            : `<p style="color:var(--muted); text-align:center; padding:10px;">لا توجد طلبات معلقة</p>`}
+            : `<p style="color:var(--muted); text-align:center; padding:14px;">لا توجد طلبات معلقة</p>`}
         </div>
- 
-        <!-- المنتجات قليلة المخزون -->
-        <h4 style="color:var(--red); margin-bottom:10px; font-family:'Rajdhani',sans-serif;">⚠️ تنبيهات المخزون</h4>
-        <div style="background:#0e140e; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:20px;">
-            ${lowStock.length ? lowStock.map(p => `
-                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #1a241a;">
-                    <span style="color:var(--text);">${escapeHtml(p.emoji || "📦")} ${escapeHtml(p.name)}</span>
-                    <span style="color:var(--red); font-weight:bold;">${p.stock} قطعة متبقية</span>
+        </div>
+
+        <div style="border-top:1px solid var(--border); padding-top:22px; margin-bottom:22px;">
+        <h4 style="color:var(--red); margin-bottom:12px; font-family:'Rajdhani',sans-serif; font-size:15px; letter-spacing:0.3px;">⚠️ تنبيهات المخزون</h4>
+        <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:6px 14px;">
+            ${lowStock.length ? lowStock.map((p, i) => `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; ${i < lowStock.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
+                    <span style="color:var(--text); font-size:13px;">${escapeHtml(p.emoji || "📦")} ${escapeHtml(p.name)}</span>
+                    <span style="color:var(--red); font-weight:700; font-size:13px;">${p.stock} قطعة متبقية</span>
                 </div>`).join("")
-            : `<p style="color:var(--green); text-align:center; padding:10px;">✅ كل المنتجات مخزونها كافي</p>`}
+            : `<p style="color:var(--green); text-align:center; padding:14px;">✅ كل المنتجات مخزونها كافي</p>`}
         </div>
- 
-        <!-- الطلبات حسب الحالة -->
-        <h4 style="color:var(--green); margin-bottom:10px; font-family:'Rajdhani',sans-serif;">📊 الطلبات حسب الحالة</h4>
-        <div style="background:#0e140e; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:20px;">
-            ${Object.keys(statusMap).length ? Object.entries(statusMap).map(([status, count]) => `
-                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #1a241a;">
-                    <span style="color:var(--text);">${escapeHtml(status)}</span>
-                    <span style="color:var(--amber); font-weight:bold;">${count} طلب</span>
+        </div>
+
+        <div style="border-top:1px solid var(--border); padding-top:22px; margin-bottom:22px;">
+        <h4 style="color:var(--green); margin-bottom:12px; font-family:'Rajdhani',sans-serif; font-size:15px; letter-spacing:0.3px;">📊 الطلبات حسب الحالة</h4>
+        <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:6px 14px;">
+            ${Object.keys(statusMap).length ? Object.entries(statusMap).map(([status, count], i, arr) => `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; ${i < arr.length - 1 ? 'border-bottom:1px solid var(--border);' : ''}">
+                    <span style="color:var(--text); font-size:13px;">${escapeHtml(status)}</span>
+                    <span style="color:var(--amber); font-weight:700; font-size:13px;">${count} طلب</span>
                 </div>`).join("")
-            : `<p style="color:var(--muted); text-align:center; padding:10px;">لا توجد طلبات</p>`}
+            : `<p style="color:var(--muted); text-align:center; padding:14px;">لا توجد طلبات</p>`}
         </div>
- 
-        <!-- الإيرادات التفصيلية -->
-        <h4 style="color:var(--green); margin-bottom:10px; font-family:'Rajdhani',sans-serif;">💵 الإيرادات التفصيلية</h4>
-        <div style="background:#0e140e; border:1px solid var(--border); border-radius:8px; padding:12px;">
-            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #1a241a;">
-                <span style="color:var(--muted);">إجمالي الإيرادات</span>
-                <span style="color:var(--green); font-weight:bold;">${totalRevenue.toLocaleString()} EGP</span>
+        </div>
+
+        <div style="border-top:1px solid var(--border); padding-top:22px;">
+        <h4 style="color:var(--green); margin-bottom:12px; font-family:'Rajdhani',sans-serif; font-size:15px; letter-spacing:0.3px;">💵 الإيرادات التفصيلية</h4>
+        <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:6px 14px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border);">
+                <span style="color:var(--muted); font-size:13px;">إجمالي الإيرادات</span>
+                <span style="color:var(--green); font-weight:700; font-size:13px;">${totalRevenue.toLocaleString()} EGP</span>
             </div>
-            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #1a241a;">
-                <span style="color:var(--muted);">إيرادات اليوم</span>
-                <span style="color:var(--green); font-weight:bold;">${todayRevenue.toLocaleString()} EGP</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border);">
+                <span style="color:var(--muted); font-size:13px;">إيرادات اليوم</span>
+                <span style="color:var(--green); font-weight:700; font-size:13px;">${todayRevenue.toLocaleString()} EGP</span>
             </div>
-            <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #1a241a;">
-                <span style="color:var(--muted);">إيرادات الشهر</span>
-                <span style="color:var(--green); font-weight:bold;">${monthRevenue.toLocaleString()} EGP</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid var(--border);">
+                <span style="color:var(--muted); font-size:13px;">إيرادات الشهر</span>
+                <span style="color:var(--green); font-weight:700; font-size:13px;">${monthRevenue.toLocaleString()} EGP</span>
             </div>
-            <div style="display:flex; justify-content:space-between; padding:8px 0;">
-                <span style="color:var(--muted);">متوسط قيمة الطلب</span>
-                <span style="color:var(--green); font-weight:bold;">${totalOrders ? Math.round(totalRevenue / totalOrders).toLocaleString() : 0} EGP</span>
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 0;">
+                <span style="color:var(--muted); font-size:13px;">متوسط قيمة الطلب</span>
+                <span style="color:var(--green); font-weight:700; font-size:13px;">${totalOrders ? Math.round(totalRevenue / totalOrders).toLocaleString() : 0} EGP</span>
             </div>
+        </div>
         </div>
  
     </div>`;
@@ -1361,30 +1459,49 @@ async function renderAdminOrders() {
     }
 
     content.innerHTML = `
-        <h4 style="color:var(--green); margin-bottom:15px;">📦 كشف الأوردرات المشتراة عبر الموقع (${orders.length}):</h4>
+        <h4 style="color:var(--green); margin-bottom:16px; font-family:'Rajdhani',sans-serif; font-size:18px; letter-spacing:0.5px;">📦 كشف الأوردرات المشتراة عبر الموقع (${orders.length})</h4>
         ${orders.map((o, idx) => `
-            <div style="background:var(--card-bg); border:1px solid var(--border); padding:15px; border-radius:8px; margin-bottom:15px; direction:rtl;">
-                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1a241a; padding-bottom:8px; margin-bottom:10px; flex-wrap:wrap; gap:10px;">
-                    <span style="color:var(--amber); font-weight:bold;">🆔 كود: ${o.orderId}</span>
-                    <span style="color:var(--muted); font-size:12px;">📅 ${o.date}</span>
-                    <span style="background:#112211; color:var(--green); padding:3px 8px; border-radius:4px; font-size:12px;">الحالة الحالية: ${o.status}</span>
+            <div style="background:var(--card-bg); border:1px solid var(--border); padding:16px; border-radius:10px; margin-bottom:14px; direction:rtl;">
+                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--border); padding-bottom:10px; margin-bottom:12px; flex-wrap:wrap; gap:10px;">
+                    <span style="color:var(--amber); font-weight:700; font-family:'Rajdhani',sans-serif; font-size:16px; letter-spacing:0.5px;">🆔 ${o.orderId}</span>
+                    <span style="background:var(--dark); color:var(--green); border:1px solid var(--green); padding:4px 10px; border-radius:99px; font-size:11px; font-weight:700;">${o.status}</span>
                 </div>
-                <p style="font-size:13px; margin-bottom:4px;">👤 <b>العميل:</b> ${escapeHtml(o.customer.name)} (${o.customer.code})</p>
-                <p style="font-size:13px; margin-bottom:4px;">📞 <b>الهاتف:</b> ${escapeHtml(o.customer.phone)}</p>
-                <p style="font-size:13px; margin-bottom:4px;">📍 <b>العنوان:</b> ${escapeHtml(o.customer.address)}</p>
-                <p style="font-size:13px; margin-bottom:8px; color:var(--amber);">📝 <b>كومنت وملاحظة العميل الكلية:</b> ${escapeHtml(o.comment)}</p>
-                
-                <div style="background:#050a05; padding:8px; border-radius:6px; margin-bottom:12px;">
-                    <span style="font-size:12px; color:var(--muted); display:block; margin-bottom:5px;">🛒 المشتريات:</span>
-                    ${o.items.map(i => `<span style="display:inline-block; font-size:12px; background:#111; padding:4px 8px; border-radius:4px; margin-left:5px; margin-bottom:5px;">${escapeHtml(i.emoji)} ${escapeHtml(i.name)} (${i.price} ج.م)</span>`).join('')}
+                <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:10px 20px; margin-bottom:12px;">
+                    <div>
+                        <span style="display:block; font-size:10px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:2px;">👤 العميل</span>
+                        <span style="font-size:14px; font-weight:600; color:var(--text);">${escapeHtml(o.customer.name)} <span style="color:var(--muted); font-weight:400;">(${escapeHtml(o.customer.code)})</span></span>
+                    </div>
+                    <div>
+                        <span style="display:block; font-size:10px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:2px;">📞 الهاتف</span>
+                        <span style="font-size:14px; color:var(--text); direction:ltr; display:inline-block;">${escapeHtml(o.customer.phone)}</span>
+                    </div>
+                    <div>
+                        <span style="display:block; font-size:10px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:2px;">📅 التاريخ</span>
+                        <span style="font-size:13px; color:var(--muted);">${escapeHtml(o.date)}</span>
+                    </div>
+                    <div style="grid-column:1/-1;">
+                        <span style="display:block; font-size:10px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:2px;">📍 العنوان</span>
+                        <span style="font-size:13px; color:var(--text); line-height:1.5;">${escapeHtml(o.customer.address)}</span>
+                    </div>
+                    <div style="grid-column:1/-1;">
+                        <span style="display:block; font-size:10px; color:var(--amber); letter-spacing:1px; text-transform:uppercase; margin-bottom:2px;">📝 ملاحظة العميل</span>
+                        <span style="font-size:13px; color:var(--amber); line-height:1.5;">${escapeHtml(o.comment)}</span>
+                    </div>
                 </div>
-                
-                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-                    <span style="font-size:16px; font-weight:bold; color:var(--green);">💰 الإجمالي: ${o.total} ج.م</span>
-                    <div style="display:flex; gap:8px;">
-                        <button data-testid="order-accept-btn-${idx}" onclick="changeOrderStatus(${idx}, 'تم قبول الطلب وجاري الشحن')" style="background:var(--green); color:black; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">✅ قبول</button>
-                        <button data-testid="order-reject-btn-${idx}" onclick="changeOrderStatus(${idx}, 'تم رفض الطلب من الإدارة')" style="background:#441111; color:var(--red); border:1px solid var(--red); padding:5px 10px; border-radius:4px; cursor:pointer; font-size:12px;">❌ رفض</button>
-                        <button data-testid="order-deliver-btn-${idx}" onclick="deliverAndRemoveOrder(${idx})" style="background:var(--amber); color:black; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold;">📦 تم التسليم للعميل (Manual)</button>
+
+                <div style="background:var(--dark); padding:10px 12px; border-radius:8px; margin-bottom:14px;">
+                    <span style="font-size:11px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; display:block; margin-bottom:8px;">🛒 المشتريات</span>
+                    <div style="display:flex; flex-wrap:wrap; gap:6px;">
+                        ${o.items.map(i => `<span style="display:inline-block; font-size:12px; background:var(--card-bg); border:1px solid var(--border); padding:5px 10px; border-radius:6px;">${escapeHtml(i.emoji)} ${escapeHtml(i.name)} <span style="color:var(--green); font-weight:600;">(${i.price} ج.م)</span></span>`).join('')}
+                    </div>
+                </div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; padding-top:4px; border-top:1px solid var(--border);">
+                    <span style="font-size:17px; font-weight:700; color:var(--green); font-family:'Rajdhani',sans-serif; padding-top:10px;">💰 ${o.total} ج.م</span>
+                    <div style="display:flex; gap:8px; padding-top:10px;">
+                        <button data-testid="order-accept-btn-${idx}" onclick="changeOrderStatus(${idx}, 'تم قبول الطلب وجاري الشحن')" style="background:var(--green); color:#000; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:700;">✅ قبول</button>
+                        <button data-testid="order-reject-btn-${idx}" onclick="changeOrderStatus(${idx}, 'تم رفض الطلب من الإدارة')" style="background:transparent; color:var(--red); border:1px solid var(--red); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:700;">❌ رفض</button>
+                        <button data-testid="order-deliver-btn-${idx}" onclick="deliverAndRemoveOrder(${idx})" style="background:var(--amber); color:#000; border:none; padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:700;">📦 تم التسليم (Manual)</button>
                     </div>
                 </div>
             </div>
@@ -1437,26 +1554,26 @@ async function renderAdminUsers() {
     }
 
     content.innerHTML = `
-        <h4 style="color:var(--amber); margin-bottom:15px;">👥 كشوفات حسابات العملاء (${users.length}):</h4>
-        <div style="overflow-x:auto;">
+        <h4 style="color:var(--amber); margin-bottom:16px; font-family:'Rajdhani',sans-serif; font-size:18px; letter-spacing:0.5px;">👥 كشوفات حسابات العملاء (${users.length})</h4>
+        <div style="overflow-x:auto; border:1px solid var(--border); border-radius:10px;">
             <table style="width:100%; border-collapse:collapse; font-size:13px; text-align:right; color:var(--text);">
                 <thead>
-                    <tr style="background:#112211; color:var(--green); border-bottom:2px solid var(--border);">
-                        <th style="padding:10px; border:1px solid var(--border);">كود العميل</th>
-                        <th style="padding:10px; border:1px solid var(--border);">الاسم الكامل</th>
-                        <th style="padding:10px; border:1px solid var(--border);">رقم الهاتف</th>
-                        <th style="padding:10px; border:1px solid var(--border);">📍 العنوان</th>
-                        <th style="padding:10px; border:1px solid var(--border);">إجراءات</th>
+                    <tr style="background:var(--card-bg); color:var(--green); border-bottom:2px solid var(--green);">
+                        <th style="padding:12px 14px; font-size:11px; letter-spacing:1px; text-transform:uppercase; font-weight:700;">كود العميل</th>
+                        <th style="padding:12px 14px; font-size:11px; letter-spacing:1px; text-transform:uppercase; font-weight:700;">الاسم الكامل</th>
+                        <th style="padding:12px 14px; font-size:11px; letter-spacing:1px; text-transform:uppercase; font-weight:700;">رقم الهاتف</th>
+                        <th style="padding:12px 14px; font-size:11px; letter-spacing:1px; text-transform:uppercase; font-weight:700;">📍 العنوان</th>
+                        <th style="padding:12px 14px; font-size:11px; letter-spacing:1px; text-transform:uppercase; font-weight:700; text-align:center;">إجراءات</th>
                     </tr>
                 </thead>
                 <tbody>
-                    ${users.map(u => `
-                        <tr style="border-bottom:1px solid #1a241a; background:rgba(250,250,250,0.01);">
-                            <td style="padding:10px; border:1px solid var(--border); color:var(--amber); font-weight:bold;">${escapeHtml(u.code || '—')}</td>
-                            <td style="padding:10px; border:1px solid var(--border);">${escapeHtml(u.name || '—')}</td>
-                            <td style="padding:10px; border:1px solid var(--border); font-family:sans-serif;">${escapeHtml(u.idNum || '—')}</td>
-                            <td style="padding:10px; border:1px solid var(--border); max-width:200px; white-space:normal; word-wrap:break-word;">${escapeHtml(u.address || '—')}</td>
-                            <td style="padding:10px; border:1px solid var(--border);">
+                    ${users.map((u, i) => `
+                        <tr style="border-bottom:1px solid var(--border); background:${i % 2 === 0 ? 'transparent' : 'rgba(29,185,84,0.03)'};">
+                            <td style="padding:13px 14px; color:var(--amber); font-weight:700; font-family:'Rajdhani',sans-serif; font-size:14px;">${escapeHtml(u.code || '—')}</td>
+                            <td style="padding:13px 14px; font-weight:600;">${escapeHtml(u.name || '—')}</td>
+                            <td style="padding:13px 14px; font-family:sans-serif; color:var(--muted); direction:ltr; text-align:right;">${escapeHtml(u.idNum || '—')}</td>
+                            <td style="padding:13px 14px; color:var(--muted); max-width:200px; white-space:normal; word-wrap:break-word; line-height:1.5;">${escapeHtml(u.address || '—')}</td>
+                            <td style="padding:13px 14px; text-align:center;">
                                 <button data-testid="delete-user-${escapeHtml(u.uid || u.id || '')}" data-uid="${escapeHtml(u.uid || u.id || '')}" data-name="${escapeHtml(u.name || 'العميل')}" onclick="deleteUserAccount(this.dataset.uid, this.dataset.name)"
                                     style="background:#441111; color:var(--red); border:1px solid var(--red); padding:5px 10px; border-radius:4px; cursor:pointer; font-size:12px;">🗑️ حذف الحساب</button>
                             </td>
@@ -1536,10 +1653,69 @@ function initGlowCardPerformance() {
     });
 } function showToast(msg, type = "info") {
     const t = document.getElementById("toast"); if (!t) return;
-    t.textContent = msg;
-    t.style.borderRight = `4px solid ${type === "green" ? "var(--green)" : (type === "error" ? "var(--red)" : "var(--amber)")}`;
+
+    // كتير من نداءات showToast() الموجودة فعلياً بتحط إيموجي في أول الرسالة
+    // نفسها (زي "✅ تم..." أو "🗑️ تم حذف..."). لو ضفنا أيقونة تلقائية فوق
+    // ده هيبان إيموجي مكرر. الحل: نتحقق هل الرسالة بادئة بإيموجي بالفعل،
+    // ولو كده منعرضش الأيقونة التلقائية خالص — نعرض بس رسالة الكولر زي
+    // ما هي، بالظبط زي دلوقتي. الأيقونة التلقائية بتظهر فقط لما الرسالة
+    // نص عادي من غير إيموجي في البداية.
+    const EMOJI_LEADING = /^\s*\p{Extended_Pictographic}/u;
+    const hasOwnIcon = EMOJI_LEADING.test(msg);
+
+    // نفس منطق الألوان الموجود بالظبط — الأيقونة بتتبع نفس التصنيف اللي
+    // بيحدد لون الحد الجانبي، مفيش تصنيف رابع مستحدث هنا.
+    const color = type === "green" ? "var(--green)" : (type === "error" ? "var(--red)" : "var(--amber)");
+    const icon  = type === "green" ? "✅" : (type === "error" ? "❌" : "⚠️");
+    t.style.borderRight = `4px solid ${color}`;
+
+    // بناء العناصر الداخلية مرة واحدة بس (lazy) — أول نداء لـ showToast()
+    // بيجهزهم، أي نداء بعد كده بيعيد استخدامهم بدل إعادة بناء الـ DOM.
+    // textContent على العنصر كله اتشالت عشان كانت بتمسح أي عنصر ابن كل مرة.
+    let iconEl = t.querySelector(".toast-icon");
+    let msgEl  = t.querySelector(".toast-msg");
+    let barEl  = t.querySelector(".toast-progress");
+    if (!iconEl || !msgEl || !barEl) {
+        t.textContent = ""; // تنضيف احتياطي لو العنصر كان فيه نص قديم من قبل الترقية
+        iconEl = document.createElement("span");
+        iconEl.className = "toast-icon";
+        msgEl = document.createElement("span");
+        msgEl.className = "toast-msg";
+        const barWrap = document.createElement("div");
+        barWrap.className = "toast-progress-track";
+        barEl = document.createElement("div");
+        barEl.className = "toast-progress";
+        barWrap.appendChild(barEl);
+        t.appendChild(iconEl);
+        t.appendChild(msgEl);
+        t.appendChild(barWrap);
+    }
+
+    iconEl.textContent = icon;
+    iconEl.style.display = hasOwnIcon ? "none" : "";
+    msgEl.textContent = msg; // نفس الحماية اللي كانت موجودة — textContent مش innerHTML
+    barEl.style.background = color;
+
+    // إلغاء أي مؤقّت سابق لسه شغال — لو showToast() اتنادت مرة تانية قبل
+    // ما التوست القديم يختفي، مفيش داعي مؤقّتين يتصارعوا على .show، ونفس
+    // الفكرة بتتطبق على البروجرس بار عشان ميفضلش عالق في منتصف أنيميشن قديمة.
+    if (t.__voltToastTimeout) clearTimeout(t.__voltToastTimeout);
+
+    // إعادة تشغيل أنيميشن البروجرس بار من الصفر: نلغي الترانزيشن مؤقتاً،
+    // نرجّع العرض 100%، نجبر reflow، وبعدين نفعّل الترانزيشن ونخلي العرض 0%
+    // — الطريقة القياسية لإعادة تشغيل CSS transition بدل ما الأنيميشن
+    // القديمة تكمل من نفس المكان.
+    barEl.style.transition = "none";
+    barEl.style.width = "100%";
+    void barEl.offsetWidth; // فرض reflow
+    barEl.style.transition = "width 3000ms linear";
+    barEl.style.width = "0%";
+
     t.classList.add("show");
-    setTimeout(() => t.classList.remove("show"), 3000);
+    t.__voltToastTimeout = setTimeout(() => {
+        t.classList.remove("show");
+        t.__voltToastTimeout = null;
+    }, 3000);
 }
 // دالة حذف منتج بالكامل (بالانديكس) — لوحة تزويد الكميات في renderAdminProducts
 // ملحوظة: كانت هذه الدالة معرّفة سابقاً باسم deleteProduct(index)، وهو نفس اسم
@@ -1876,7 +2052,7 @@ window.renderPromoTable = function () {
                     حذف 🗑️
                 </button>
             </td>
-        </tr>`;
+        </tr>`; 
     });
 
     html += `</table>`;

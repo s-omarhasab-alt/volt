@@ -103,6 +103,12 @@
              in submitNewProduct() (script.js). -->
         <button class="filter-btn" data-category="others" data-testid="filter-btn-others">أخرى</button>
     </div>
+    <div class="price-filter-row">
+        <span class="price-filter-label">السعر حتى:</span>
+        <input type="range" id="priceFilterSlider" data-testid="price-filter-slider" min="0" max="1000" step="10" value="1000">
+        <output id="priceFilterValue" data-testid="price-filter-value" for="priceFilterSlider">1000</output>
+        <span class="price-filter-unit">EGP</span>
+    </div>
     <h2 class="section-title">المنتجات <span>المتاحة</span></h2>
     <main id="products"></main>
 
@@ -290,7 +296,7 @@
                                     style="width:100px;height:100px;object-fit:cover;border-radius:10px;margin-bottom:1rem;">
                                 <h3>Arduino Uno R3</h3>
                                 <p>المتحكم الدقيق الأشهر عالمياً — مثالي للمشاريع التفاعلية</p>
-                                <span style="color:#1db954;font-size:1.3rem;font-weight:bold;margin-top:1rem;">450
+                                <span style="color:var(--green);font-size:1.3rem;font-weight:bold;margin-top:1rem;">450
                                     EGP</span>
                             </div>
                         </div>
@@ -308,7 +314,7 @@
                                     style="width:100px;height:100px;object-fit:cover;border-radius:10px;margin-bottom:1rem;">
                                 <h3>Ultrasonic Sensor</h3>
                                 <p>مستشعر قياس المسافات بدقة عالية — مناسب للروبوتات</p>
-                                <span style="color:#1db954;font-size:1.3rem;font-weight:bold;margin-top:1rem;">85
+                                <span style="color:var(--green);font-size:1.3rem;font-weight:bold;margin-top:1rem;">85
                                     EGP</span>
                             </div>
                         </div>
@@ -326,7 +332,7 @@
                                     style="width:100px;height:100px;object-fit:cover;border-radius:10px;margin-bottom:1rem;">
                                 <h3>Relay Module 4CH</h3>
                                 <p>موديول ريلي 4 قنوات للتحكم في المنازل الذكية</p>
-                                <span style="color:#1db954;font-size:1.3rem;font-weight:bold;margin-top:1rem;">160
+                                <span style="color:var(--green);font-size:1.3rem;font-weight:bold;margin-top:1rem;">160
                                     EGP</span>
                             </div>
                         </div>
@@ -364,6 +370,22 @@
         <div class="modal">
             <button class="modal-close" id="closeModalBtn" data-testid="close-modal-btn">&times;</button>
             <div class="modal-inner" id="modalInnerContent"></div>
+        </div>
+    </div>
+
+    <!-- PRODUCT FULL PAGE — same #/product/{id} hash routing that used to
+         open modal-overlay above now renders into this section instead.
+         openProductModal() injects into #productPageInnerContent and
+         toggles .open on #product-page exactly like it used to toggle
+         .open on #modal-overlay: same mechanism (class-based show/hide,
+         no reload), full-page layout instead of a centered overlay.
+         #modal-overlay markup above is left in place; nothing currently
+         opens it, but the CSS/testids it depends on are unrelated to this
+         section. -->
+    <div id="product-page" class="product-page">
+        <div class="product-page-inner">
+            <button class="product-page-close" id="closeProductPageBtn" data-testid="close-product-page-btn">&larr; رجوع للمتجر</button>
+            <div class="modal-inner" id="productPageInnerContent"></div>
         </div>
     </div>
 
@@ -517,6 +539,7 @@
                     placeholder="الإيميل (اختياري) - مثال: name@gmail.com">
                 <p style="font-size: 12px; color: gray;">* يمكنك تخطي هذه الخطوة أو كتابة اسمك وسنكمل نحن
                     الباقي.</p>
+                <p id="step4-err" class="wiz-error" data-testid="wstep-4-error">⚠️ الإيميل غير صالح</p>
                 <div class="wizard-nav">
                     <button class="wiz-btn-back" data-testid="wstep-4-back" onclick="wizBack()">← رجوع</button>
                     <button class="wiz-btn-next" data-testid="wstep-4-next" onclick="wizNext()">التالي ←</button>
@@ -940,7 +963,7 @@ function frame() {
             if (!adminContent) return;
             const productsList = await getProducts();
             let html = `
-            <h3 style="color:#1db954; text-align:center; margin-bottom:15px;">🛍️ تزويد كميات المنتجات</h3>
+            <h3 style="color:var(--green); text-align:center; margin-bottom:15px;">🛍️ تزويد كميات المنتجات</h3>
             <table style="width:100%; text-align:right; border-collapse:collapse; background:#121212; border-radius:8px;">
                 <tr style="border-bottom:1px solid #333;">
                     <th style="padding:10px;">المنتج</th>
@@ -956,7 +979,7 @@ function frame() {
                     <td style="padding:10px; text-align:center; color:gray;">${p.stock || 0}</td>
                     <td style="padding:10px; text-align:center;">
                         <input type="number" id="fast-stock-${safeId}" data-testid="fast-stock-input-${safeId}" value="${p.stock || 0}" style="width:60px; padding:5px; text-align:center; background:#000; color:#fff; border:1px solid #444; border-radius:4px;">
-                        <button data-testid="fast-stock-save-${safeId}" onclick="saveFastStock('${safeId}')" style="background:#1db954; color:white; padding:5px 10px; border:none; border-radius:4px; cursor:pointer;">حفظ 💾</button>
+                        <button data-testid="fast-stock-save-${safeId}" onclick="saveFastStock('${safeId}')" style="background:var(--green); color:white; padding:5px 10px; border:none; border-radius:4px; cursor:pointer;">حفظ 💾</button>
                     </td>
                 </tr>`;
             });
@@ -1292,7 +1315,7 @@ function frame() {
             }
         })();
     </script>
-
+    <script src="filter.js"></script>
     <script src="promoCodeEngine.js"></script>
     <script src="cart-promo.js"></script>
     <script src="script1.js"></script>

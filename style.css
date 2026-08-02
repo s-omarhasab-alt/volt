@@ -413,6 +413,45 @@ nav {
     font-weight: 700
 }
 
+.price-filter-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 16px 40px 0;
+    flex-wrap: wrap
+}
+
+.price-filter-label {
+    font-size: 13px;
+    color: var(--muted);
+    font-family: 'Cairo', sans-serif
+}
+
+.price-filter-row input[type="range"] {
+    width: min(260px, 60vw);
+    accent-color: var(--green);
+    cursor: pointer
+}
+
+.price-filter-row output {
+    min-width: 46px;
+    text-align: center;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--green);
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 3px 8px
+}
+
+.price-filter-unit {
+    font-size: 12px;
+    color: var(--muted)
+}
+
 /* ===== PRODUCTS ===== */
 .section-title {
     text-align: center;
@@ -706,6 +745,117 @@ nav {
     flex-wrap: wrap
 }
 
+/* ===== PRODUCT FULL PAGE =====
+   Same show/hide mechanism as .overlay.open (toggle .open, no reload),
+   but fixed to the full viewport instead of a centered box. Content
+   inside reuses .modal-inner/.modal-img/.modal-info/etc. directly —
+   this only supplies the page-level chrome (background, close affordance,
+   scroll container, entrance animation). */
+.product-page {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 300;
+    background: var(--black);
+    overflow-y: auto
+}
+
+.product-page.open {
+    display: block
+}
+
+.product-page-inner {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 90px 40px 60px;
+    animation: modalIn .28s cubic-bezier(.22, 1, .36, 1)
+}
+
+/* Sticky price + Add-to-Cart bar. position:sticky (not fixed) because
+   .product-page itself is the scrolling element (overflow-y:auto) — a
+   fixed bar would pin to the viewport, not to this container, and would
+   misalign the moment .product-page's own padding/scrollbar differs from
+   the viewport. Sticky keeps it anchored to the bottom of
+   .product-page-inner as the user scrolls through specs/description,
+   without introducing a second fixed-position layer to keep in sync. */
+.product-sticky-bar {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-top: 24px;
+    padding: 14px 20px;
+    background: var(--card-bg);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, .35)
+}
+
+.product-sticky-bar__price {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--green);
+    white-space: nowrap
+}
+
+.product-sticky-bar__price small {
+    font-size: 13px;
+    color: var(--muted)
+}
+
+.product-sticky-bar .btn-primary {
+    flex-shrink: 0
+}
+
+.product-page-close {
+    position: fixed;
+    top: 82px;
+    right: 40px;
+    background: var(--card-bg);
+    border: 1.5px solid var(--border);
+    color: var(--muted);
+    padding: 9px 18px;
+    border-radius: 8px;
+    font-family: 'Cairo', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all .2s;
+    z-index: 301
+}
+
+.product-page-close:hover {
+    border-color: var(--green);
+    color: var(--green)
+}
+
+@media (max-width: 600px) {
+    .product-page-inner {
+        padding: 78px 18px 40px
+    }
+
+    .product-page-close {
+        top: 70px;
+        right: 16px;
+        padding: 8px 14px;
+        font-size: 12px
+    }
+
+    .product-sticky-bar {
+        padding: 12px 14px;
+        gap: 10px
+    }
+
+    .product-sticky-bar .btn-primary {
+        padding: 12px 18px;
+        font-size: 13px
+    }
+}
+
 .btn-primary {
     background: var(--green);
     color: #000;
@@ -822,7 +972,11 @@ nav {
     font-family: 'Cairo', sans-serif;
     transition: transform .3s cubic-bezier(.22, 1, .36, 1);
     z-index: 400;
-    pointer-events: none
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    overflow: hidden
 }
 
 #toast.show {
@@ -835,6 +989,32 @@ nav {
 
 #toast.err {
     background: var(--red)
+}
+
+.toast-icon {
+    font-size: 15px;
+    line-height: 1;
+    flex-shrink: 0
+}
+
+.toast-msg {
+    white-space: nowrap
+}
+
+/* شريط تقدّم رفيع أسفل التوست — يعكس الوقت المتبقي لحد الاختفاء (3000ms)،
+   ملوّن بنفس لون الحد الجانبي (var color) بدل لون ثابت. */
+.toast-progress-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: rgba(0, 0, 0, .15)
+}
+
+.toast-progress {
+    height: 100%;
+    width: 100%;
 }
 
 /* ===== ALERT MODAL ===== */
@@ -1589,7 +1769,7 @@ footer span {
 }
 
 .accordion-header.active {
-    background-color: #1db954;
+background-color: var(--green);
     /* لون الزرار لما يكون مفتوح */
 }
 
@@ -1816,4 +1996,54 @@ footer span {
 .folder-card span {
     font-size: 12px;
     color: var(--muted);
+}
+/* ===== PRODUCT SKELETON LOADER (shimmer) ===== */
+.skeleton-card {
+    background: var(--card-bg);
+    border: 1.5px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.skeleton-img {
+    width: 100%;
+    aspect-ratio: 1;
+    max-height: 100px;
+}
+
+.skeleton-body {
+    padding: 14px 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.skeleton-line {
+    height: 10px;
+    border-radius: 4px;
+}
+
+.skeleton-line.skeleton-title { width: 70%; height: 13px; }
+.skeleton-line.skeleton-price { width: 40%; margin-top: 6px; }
+
+.skeleton-img,
+.skeleton-line {
+    background: linear-gradient(90deg, var(--border) 25%, var(--muted) 50%, var(--border) 75%);
+    background-size: 400% 100%;
+    animation: skeletonShimmer 1.4s ease infinite;
+}
+
+@keyframes skeletonShimmer {
+    0%   { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .skeleton-img,
+    .skeleton-line {
+        animation: none;
+        background: var(--border);
+    }
 }
