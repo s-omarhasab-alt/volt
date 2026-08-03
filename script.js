@@ -23,6 +23,23 @@
        { id: 5, name: "NodeMCU ESP8266 IoT", category: "arduino", emoji: "🌐", price: 240, desc: "لوحة تطوير متكاملة تحتوي على شريحة Wi-Fi مدمجة، الخيار الأفضل لمشاريع إنترنت الأشياء والتحكم عن بعد.", specs: { "الذاكرة": "4MB Flash", "الواي فاي": "802.11 b/g/n", "المعالج": "Tensilica 32-bit" }, stock: 12 }
    ];
    ========================================================================== */
+
+// FIX: defaultProducts كانت مُستخدمة في 3 أماكن تحت (هنا، وجوه getProducts()
+// مرتين) من غير ما تكون متعرّفة كمتغير خالص — كانت موجودة بس كتعليق معطّل
+// فوق. ده كان بيرمي "ReferenceError: defaultProducts is not defined" في أول
+// سطر تنفيذ فعلي في الملف (سطر التخزين تحت مباشرة)، وبما إن الخطأ ده بيحصل
+// برا أي try/catch، الـ JS engine كان بيوقف تنفيذ باقي script.js بالكامل من
+// هنا — يعني DOMContentLoaded listener في آخر الملف ما كنش بيتسجل خالص، فمفيش
+// splash animation، مفيش نافبار تفاعلي، مفيش منتجات، مفيش أي زرار شغال.
+//
+// الحل: array فاضي، مش الداتا التجريبية. المتجر ده بياناته الحقيقية كلها في
+// Firestore (5 منتجات فعلية زي ما موضح في التعليق فوق)، فالغرض الوحيد من
+// defaultProducts هو fallback أخير جوه getProducts() لو الكاش المحلي فاضي
+// والاتصال بـ Firestore فشل في نفس اللحظة — مش المفروض يظهر منتجات وهمية
+// للعميل في السيناريو ده، أفضل حاجة إنه يشوف "لم يتم العثور على أي منتجات"
+// (renderProducts() أصلاً بيعرض الرسالة دي لو الـ array وصله فاضي).
+const defaultProducts = [];
+
 // دمج البيانات مع التخزين الدائم LocalStorage لضمان عدم ضياعها
 if (!localStorage.getItem("volt_products")) {
     localStorage.setItem("volt_products", JSON.stringify(defaultProducts));
