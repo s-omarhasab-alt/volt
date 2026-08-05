@@ -12,7 +12,7 @@ body {
 }
 
 /* ---------- Filler sections just to give scroll room ---------- */
-.hero {
+.filler-section {
     height: 60vh;
     display: flex;
     align-items: center;
@@ -21,7 +21,7 @@ body {
     color: #888;
 }
 
-.hero--end {
+.filler-section--end {
     height: 80vh;
 }
 
@@ -37,7 +37,7 @@ body {
 /* =========================================================
    THE STACK
    Each .stack__item is a TALL wrapper (scroll distance).
-   Inside it, .card is sticky and pins to the viewport
+   Inside it, .stack-card is sticky and pins to the viewport
    while its wrapper is passing through.
    ========================================================= */
 
@@ -68,7 +68,7 @@ body {
     margin-bottom: clamp(-280px, -40vh, -120px);
 }
 
-.card {
+.stack-card {
     position: sticky;
     top: 10vh;
     /* pin offset from top of viewport */
@@ -80,7 +80,7 @@ body {
     box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
     transform-origin: top center;
     background: white;
-    /* FIX #2: Merged from orphaned second .card block at end of file.
+    /* FIX #2: Merged from orphaned second .stack-card block at end of file.
        White background is visible on transparent-content cards and
        on the initial paint frame before images load. */
 
@@ -90,7 +90,7 @@ body {
     transform: translateZ(0);
 
     /* FIX #7: isolation:isolate makes the stacking context created by
-       .card--recede's filter property explicit and deterministic,
+       .stack-card--recede's filter property explicit and deterministic,
        preventing unexpected z-index reordering of children
        (e.g. .card__caption) across browsers. */
     isolation: isolate;
@@ -102,14 +102,14 @@ body {
        animated transitions. */
 }
 
-/* FIX #1 & #1(recede): All motion — transitions on .card and the
+/* FIX #1 & #1(recede): All motion — transitions on .stack-card and the
    recede transform/filter — gated behind prefers-reduced-motion.
    Users who opt out of motion see instant state changes.
    will-change: filter added here only (where animation is active)
    to avoid promoting a paint-heavy property when unused. */
 @media (prefers-reduced-motion: no-preference) {
-    .card {
-        /* animated by JS toggling .card--recede */
+    .stack-card {
+        /* animated by JS toggling .stack-card--recede */
         transition: transform 0.15s linear, filter 0.15s linear, opacity 0.15s linear;
     }
 
@@ -118,7 +118,7 @@ body {
        NOTE: filter:brightness() triggers a paint (not compositor-only).
        This is a known performance trade-off for the visual effect.
        Documented here — not changed to avoid altering appearance. */
-    .card.card--recede {
+    .stack-card.stack-card--recede {
         transform: scale(0.9) translateY(-10px);
         filter: brightness(0.6);
     }
@@ -127,16 +127,16 @@ body {
 /* FIX #1 (reduced-motion fallback): Recede state is still applied
    visually for reduced-motion users, but without animated transition. */
 @media (prefers-reduced-motion: reduce) {
-    .card.card--recede {
+    .stack-card.stack-card--recede {
         transform: scale(0.9) translateY(-10px);
         filter: brightness(0.6);
     }
 }
 
-/* FIX #3: .card__img and .card img are intentional duplicates covering
+/* FIX #3: .card__img and .stack-card img are intentional duplicates covering
    two HTML patterns:
      1. <img class="card__img"> — matched by .card__img (specificity 0-1-0)
-     2. <img> inside .card without the class — matched by .card img (0-0-2)
+     2. <img> inside .stack-card without the class — matched by .stack-card img (0-0-2)
    MAINTENANCE PAIR: if you update one, update the other identically.
    Do not remove either without auditing which HTML pattern your
    templates use.
@@ -144,21 +144,21 @@ body {
    FIX #23 — THESE TWO RULESETS ARE NOT CURRENTLY IDENTICAL. Checked
    property-by-property against each other in this pass:
      .card__img has  pointer-events: none;  and  user-select: none;
-     .card img  has NEITHER of those two declarations.
+     .stack-card img  has NEITHER of those two declarations.
    Everything else (width, height, object-fit, display) already matches.
    This is exactly the drift the "MAINTENANCE PAIR" comment above warns
    about, and it's already happened — whether on purpose or by omission
    isn't something this file can determine on its own.
 
-   NOT auto-merged into a single `.card__img, .card img { ... }` selector
+   NOT auto-merged into a single `.card__img, .stack-card img { ... }` selector
    in this pass, because doing so requires picking a side, and picking
    wrong is a real behavior change: adding pointer-events:none/user-
-   select:none to the .card img pattern would silently disable right-
-   click-save and text selection on any unclassed <img> inside .card,
+   select:none to the .stack-card img pattern would silently disable right-
+   click-save and text selection on any unclassed <img> inside .stack-card,
    which nothing in this file's history says is intended for that pattern
    specifically. That's a decision for whoever owns the HTML templates
-   (do .card img images need the same interaction-blocking as .card__img
-   ones, or was the omission deliberate — e.g. because .card img covers a
+   (do .stack-card img images need the same interaction-blocking as .card__img
+   ones, or was the omission deliberate — e.g. because .stack-card img covers a
    pattern where users SHOULD be able to select/save?), not something to
    guess silently in a refactor.
 
@@ -177,7 +177,7 @@ body {
     user-select: none;
 }
 
-.card img {
+.stack-card img {
     width: 100%;
     height: 100%;
     display: block;
@@ -208,7 +208,7 @@ body {
         max-width: 88vw;
     }
 
-    .card {
+    .stack-card {
         top: 6vh;
     }
 }

@@ -33,8 +33,7 @@
             </svg>
             <!-- ⚡ Splash VOLT wrapper مع canvas للدوامة -->
             <div style="position:relative; display:inline-block;">
-                <canvas id="splash-lightning-canvas"
-                    style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; z-index:1;"></canvas>
+                <canvas id="splash-lightning-canvas" class="volt-lightning-canvas"></canvas>
                 <span class="splash-wordmark" style="position:relative; z-index:2;"></span>
             </div>
         </div>
@@ -659,26 +658,21 @@
                          than element content, causing it to render as an empty button.
                          data-testid added here; the matching attribute in the rendered
                          HTML is the test contract noted in script2.js FIX #7. -->
-                <button id="adminPanelBtn" class="btn-primary" data-testid="admin-panel-btn"
-                    style="flex:1; padding:10px;">أكواد الخصم 🎟️</button>
-                <button class="btn-primary" data-testid="admin-render-orders" onclick="renderAdminOrders()"
-                    style="flex:1; padding:10px;">📦
+                <button id="adminPanelBtn" class="btn-primary admin-action-btn" data-testid="admin-panel-btn">أكواد الخصم 🎟️</button>
+                <button class="btn-primary admin-action-btn" data-testid="admin-render-orders" onclick="renderAdminOrders()">📦
                     إدارة
                     الأوردرات</button>
-                <button class="btn-primary" style="background:var(--dark); color:var(--text);"
-                    data-testid="admin-render-users" onclick="renderAdminUsers()" style="flex:1; padding:10px;">👥
+                <button class="btn-primary admin-action-btn" style="background:var(--dark); color:var(--text);"
+                    data-testid="admin-render-users" onclick="renderAdminUsers()">👥
                     بيانات العملاء</button>
-                <button class="btn-primary" style="background:var(--dark); color:var(--text);"
+                <button class="btn-primary admin-action-btn" style="background:var(--dark); color:var(--text);"
                     data-testid="admin-open-add-product"
-                    onclick="document.getElementById('add-product-modal').classList.add('open')"
-                    style="flex:1; padding:10px;">➕ إضافة منتج للمتجر</button>
-                <button class="btn-primary" style="background:var(--dark); color:var(--amber);"
-                    data-testid="admin-render-categories" onclick="renderAdminCategories()"
-                    style="flex:1; padding:10px;">🏷️ إدارة
+                    onclick="document.getElementById('add-product-modal').classList.add('open')">➕ إضافة منتج للمتجر</button>
+                <button class="btn-primary admin-action-btn" style="background:var(--dark); color:var(--amber);"
+                    data-testid="admin-render-categories" onclick="renderAdminCategories()">🏷️ إدارة
                     التصنيفات</button>
-                <button class="btn-primary" style="background:var(--dark); color:var(--green);"
-                    data-testid="admin-render-products" onclick="renderAdminProducts()"
-                    style="flex:1; padding:10px;">🛍️ إدارة
+                <button class="btn-primary admin-action-btn" style="background:var(--dark); color:var(--green);"
+                    data-testid="admin-render-products" onclick="renderAdminProducts()">🛍️ إدارة
                     المنتجات</button>
             </div>
             <div id="admin-content" data-testid="admin-content"
@@ -1252,8 +1246,8 @@ function frame() {
                                     <div class="card glow-card" data-id="${p.id}">
                                         <div class="card-img" style="position:relative;" onclick="event.stopPropagation(); openProductModal('${p.id}')">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}
                                             ${p.stock <= 0
-                                ? `<button class="fab-add" data-testid="fab-add" data-product-id="${p.id}" style="position:absolute; bottom:-18px; left:50%; transform:translateX(-50%); width:36px; height:36px; border-radius:50%; background:var(--border); color:var(--muted); border:none; cursor:not-allowed; font-size:20px; font-weight:bold; display:flex; align-items:center; justify-content:center; z-index:5;" disabled>×</button>`
-                                : `<button class="fab-add" data-testid="fab-add" data-product-id="${p.id}" onclick="event.stopPropagation(); openProductModal('${p.id}');" style="position:absolute; bottom:-18px; left:50%; transform:translateX(-50%); width:36px; height:36px; border-radius:50%; background:#FFFFFF; color:#FF7A00; border:none; box-shadow:0 2px 6px rgba(0,0,0,0.25); cursor:pointer; font-size:22px; font-weight:bold; line-height:1; display:flex; align-items:center; justify-content:center; z-index:5;" title="عرض المنتج والإضافة للسلة">+</button>`}
+                                ? `<button class="fab-add fab-add--disabled" data-testid="fab-add" data-product-id="${p.id}" disabled>×</button>`
+                                : `<button class="fab-add" data-testid="fab-add" data-product-id="${p.id}" onclick="event.stopPropagation(); openProductModal('${p.id}');" title="عرض المنتج والإضافة للسلة">+</button>`}
                                         </div>
                                         <div class="card-body">
                                             <span class="card-category">${escapeHtml(p.category)}</span>
@@ -1350,15 +1344,15 @@ function frame() {
 
         </div>
     </div>
-    <section class="hero">
+    <section class="filler-section">
         <p>Scroll down ↓</p>
     </section>
 
     <p class="hint">scroll down to see card stack</p>
 
     <section class="stack" id="stack">
-        <div class="stack__item">
-            <article class="card">
+        <div class="stack__item" data-testid="stack-item">
+            <article class="stack-card" data-testid="stack-card">
                 <img src="./VOLT2.png" alt="Product">
                 <div class="card__caption">
                     <h3>Mountain Ridge</h3>
@@ -1366,8 +1360,8 @@ function frame() {
             </article>
         </div>
 
-        <div class="stack__item">
-            <article class="card">
+        <div class="stack__item" data-testid="stack-item">
+            <article class="stack-card" data-testid="stack-card">
                 <img class="card__img"
                     src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' fill='%23121212'%3E%3Ctext x='50%25' y='50%25' fill='%23ff7a00' font-size='32' text-anchor='middle' dy='.3em' font-family='sans-serif'%3EVOLT%3C/text%3E%3C/svg%3E"
                     alt="product2">
@@ -1377,8 +1371,8 @@ function frame() {
             </article>
         </div>
 
-        <div class="stack__item">
-            <article class="card">
+        <div class="stack__item" data-testid="stack-item">
+            <article class="stack-card" data-testid="stack-card">
                 <img class="card__img"
                     src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' fill='%23121212'%3E%3Ctext x='50%25' y='50%25' fill='%23ff7a00' font-size='32' text-anchor='middle' dy='.3em' font-family='sans-serif'%3EVOLT%3C/text%3E%3C/svg%3E"
                     alt="product3">
@@ -1389,7 +1383,7 @@ function frame() {
         </div>
     </section>
 
-    <section class="hero hero--end">
+    <section class="filler-section filler-section--end">
         <p>End of stack</p>
     </section>
 

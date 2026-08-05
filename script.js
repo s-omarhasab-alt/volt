@@ -122,13 +122,13 @@ async function hashPassword(password) {
 /* ==========================================================================
    INIT
 ========================================================================== */
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
     initSplashAnimation();
     renderProductSkeletons();
-    getProducts().then(products => renderProducts(products));
     setupFilters();
     setupSearch();
-    setupPriceFilter();
+    await setupPriceFilter();
+    await applyProductFilters();
     setupCartSystem();
     updateCartBadge();
     typeWriter();
@@ -183,11 +183,11 @@ function renderProducts(products) {
 
     c.innerHTML = products.map(p => `
         <div class="card glow-card" data-id="${p.id}" style="position:relative;">
-            ${isAdmin ? `<button data-testid="product-delete-btn-${p.id}" onclick="deleteProduct(event, '${p.id}')" style="position:absolute; top:10px; left:10px; background:var(--red); color:white; border:none; border-radius:50%; width:28px; height:28px; cursor:pointer; font-weight:bold; z-index:10; font-size:14px;" title="حذف المنتج من المتجر">×</button>` : ''}
-            <div class="card-img" style="position:relative;" onclick="openProductModal('${p.id}')">${p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji)}
+            ${isAdmin ? `<button class="product-delete-btn" data-testid="product-delete-btn-${p.id}" onclick="deleteProduct(event, '${p.id}')" title="حذف المنتج من المتجر">×</button>` : ''}
+            <div class="card-img" style="position:relative;" onclick="openProductModal('${p.id}')">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}
                 ${p.stock <= 0 ?
-            `<button class="fab-add" data-testid="product-add-btn-${p.id}" style="position:absolute; bottom:-18px; left:50%; transform:translateX(-50%); width:36px; height:36px; border-radius:50%; background:var(--border); color:var(--muted); border:none; cursor:not-allowed; font-size:20px; font-weight:bold; display:flex; align-items:center; justify-content:center; z-index:5;" disabled>×</button>` :
-            `<button class="fab-add" id="btn-add-${p.id}" data-testid="product-add-btn-${p.id}" onclick="event.stopPropagation(); openProductModal('${p.id}');" style="position:absolute; bottom:-18px; left:50%; transform:translateX(-50%); width:36px; height:36px; border-radius:50%; background:#FFFFFF; color:#FF7A00; border:none; box-shadow:0 2px 6px rgba(0,0,0,0.25); cursor:pointer; font-size:22px; font-weight:bold; line-height:1; display:flex; align-items:center; justify-content:center; z-index:5;" title="عرض المنتج والإضافة للسلة">+</button>`}
+            `<button class="fab-add fab-add--disabled" data-testid="product-add-btn-${p.id}" disabled>×</button>` :
+            `<button class="fab-add fab-add--active" id="btn-add-${p.id}" data-testid="product-add-btn-${p.id}" onclick="event.stopPropagation(); openProductModal('${p.id}');" title="عرض المنتج والإضافة للسلة">+</button>`}
             </div>
             <div class="card-body">
                 <span class="card-category">${escapeHtml(p.category)}</span>
@@ -294,7 +294,7 @@ async function openProductModal(id) {
     const rows = p.specs ? Object.entries(p.specs).map(([k, v]) => `<div class="spec-row"><span>${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`).join('') : '';
     const maxQty = (p.stock !== undefined && p.stock > 0) ? p.stock : 1;
     document.getElementById("productPageInnerContent").innerHTML = `
-        <div class="modal-img">${p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="max-width:120px;border-radius:8px;">` : escapeHtml(p.emoji)}</div>
+        <div class="modal-img">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="max-width:120px;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}</div>
         <div class="modal-info">
             <span class="modal-cat">${escapeHtml(p.category)}</span>
             <h3 class="modal-name">${escapeHtml(p.name)}</h3>
@@ -304,9 +304,9 @@ async function openProductModal(id) {
             <div class="modal-qty" style="display:flex;align-items:center;gap:14px;margin:16px 0;">
                 <span style="font-weight:700;font-size:14px;">الكمية:</span>
                 <div style="display:flex;align-items:center;gap:10px;">
-                    <button type="button" data-testid="modal-qty-decrement-${p.id}" onclick="changeModalQty('${p.id}',-1,${maxQty})" style="width:32px;height:32px;border-radius:6px;border:1px solid var(--border);background:var(--dark);color:var(--text);font-size:18px;cursor:pointer;">−</button>
+                    <button type="button" class="btn-qty" data-testid="modal-qty-decrement-${p.id}" onclick="changeModalQty('${p.id}',-1,${maxQty})">−</button>
                     <span id="modalQtyVal-${p.id}" style="min-width:24px;text-align:center;font-weight:700;">1</span>
-                    <button type="button" data-testid="modal-qty-increment-${p.id}" onclick="changeModalQty('${p.id}',1,${maxQty})" style="width:32px;height:32px;border-radius:6px;border:1px solid var(--border);background:var(--dark);color:var(--text);font-size:18px;cursor:pointer;">+</button>
+                    <button type="button" class="btn-qty" data-testid="modal-qty-increment-${p.id}" onclick="changeModalQty('${p.id}',1,${maxQty})">+</button>
                 </div>
             </div>
             <div class="modal-actions">
@@ -402,7 +402,7 @@ async function deleteProduct(event, id) {
         let prods = await getProducts();
         prods = prods.filter(p => String(p.id) !== sid);
         saveProducts(prods);
-        renderProducts(prods);
+        await applyProductFilters();
         if (typeof window.renderPublicFolders === "function") window.renderPublicFolders();
         showToast("تم حذف المنتج بنجاح ✓", "warn");
     }
@@ -508,7 +508,7 @@ async function addToCart(event, id) {
     if (p.stock !== undefined) {
         p.stock--;
         saveProducts(prods);
-        renderProducts(prods);
+        await applyProductFilters();
         if (window.voltFirebase && typeof window.voltFirebase.updateProduct === "function") {
             try { window.voltFirebase.updateProduct(String(p.id), { stock: p.stock }); } catch (err) { console.warn("addToCart: فشل تحديث المخزون", err); }
         }
@@ -540,7 +540,7 @@ async function removeFromCart(i) {
     if (pIndex !== -1) {
         prods[pIndex].stock = (prods[pIndex].stock || 0) + 1;
         saveProducts(prods);
-        renderProducts(prods);
+        await applyProductFilters();
         if (window.voltFirebase && typeof window.voltFirebase.updateProduct === "function") {
             try { window.voltFirebase.updateProduct(String(prods[pIndex].id), { stock: prods[pIndex].stock }); } catch (err) { console.warn("removeFromCart: فشل تحديث المخزون", err); }
         }
@@ -700,7 +700,14 @@ async function doLogin() {
     if (!emailToTry && typeof window.voltFirebase.findUserByIdNum === "function") {
         try {
             const byIdNum = await window.voltFirebase.findUserByIdNum(loginInput);
-            if (byIdNum && byIdNum.email) emailToTry = byIdNum.email;
+            if (byIdNum) {
+                if (byIdNum.email && byIdNum.email.includes("@") && byIdNum.email !== "غير محدد") {
+                    emailToTry = byIdNum.email;
+                } else {
+                    const cleanPhone = loginInput.replace(/\D/g, "");
+                    if (cleanPhone) emailToTry = `client_${cleanPhone}@volt.com`;
+                }
+            }
         } catch (err) {
             console.error("doLogin: فشل البحث عن المستخدم برقم الهاتف", err);
         }
@@ -1121,8 +1128,8 @@ function openPaymentModal() {
 <div style="margin: 15px 0; background: #1a1a1a; padding: 15px; border-radius: 8px; border: 1px dashed #1db954;">
     <p style="color: #ccc; font-size: 14px; margin-bottom: 10px; text-align: right;">عندك كود خصم؟ 🎟️</p>
     <div style="display: flex; gap: 10px; direction: rtl;">
-        <input type="text" id="customerPromoInput" placeholder="أدخل الكود هنا..." style="flex: 1; padding: 10px; border-radius: 5px; border: 1px solid #444; background: #222; color: white; text-align: center; text-transform: uppercase;">
-        <button onclick="applyCustomerPromo()" style="background: #1db954; color: black; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold;">
+        <input type="text" id="customerPromoInput" class="promo-input" placeholder="أدخل الكود هنا...">
+        <button class="promo-apply-btn" onclick="applyCustomerPromo()">
             تطبيق
         </button>
     </div>

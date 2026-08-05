@@ -161,42 +161,28 @@ async function findUserByEmailFromFirestore(email) {
 }
 
 async function registerClientUser(email, password, profile) {
-    async function registerClientUser(email, password, profile) {
     try {
-        // 1. لو العميل مكتبش إيميل، بنعمله إيميل افتراضي برقم تليفونه عشان فايربيز يوافق
         let finalEmail = email ? email.trim() : "";
-        
         if (!finalEmail) {
-            const cleanPhone = profile.phone ? profile.phone.replace(/\D/g, '') : Date.now();
+            const cleanPhone = profile.phone ? profile.phone.replace(/\D/g, "") : String(Date.now());
             finalEmail = `client_${cleanPhone}@volt.com`;
         }
 
-        // 2. كمل باقي الكود بتاع فايربيز عادي جداً بـ finalEmail
         const userCredential = await createUserWithEmailAndPassword(auth, finalEmail, password);
         const uid = userCredential.user.uid;
 
-        await setDoc(doc(db, "users", uid), { 
-            ...profile, 
-            email: email ? email.trim() : "غير محدد", // بنسجل في الداتا بيز إنه اختار يسيبه فاضي
-            uid, 
-            role: "client", 
-            createdAt: new Date().toISOString() 
+        await setDoc(doc(db, "users", uid), {
+            ...profile,
+            email: email ? email.trim() : "غير محدد",
+            uid,
+            role: "client",
+            createdAt: new Date().toISOString()
         });
 
         return { uid, email: finalEmail };
     } catch (err) {
         console.error("registerClientUser: فشل التسجيل", err);
         return { error: err.code || "unknown", message: err.message };
-    }
-}
-    try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const uid = userCredential.user.uid;
-        await setDoc(doc(db, "users", uid), { ...profile, email, uid, role: "client", createdAt: new Date().toISOString() });
-        return { uid, email };
-    } catch (err) {
-        console.error("registerClientUser: فشل التسجيل", err);
-        return null;
     }
 }
 

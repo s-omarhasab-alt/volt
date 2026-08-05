@@ -16,11 +16,17 @@
  * The shared positional declarations below are canonical; the descendant
  * rule inherits them and only overrides z-index.
  *
- * FIX #8 (AUDIT — NO CHANGES REQUIRED): All rules in this file are active
- * and referenced. Both canvas rulesets (.volt-lightning-canvas and
- * .nav-volt-wrapper canvas) are live. The prefers-reduced-motion-gated
- * voltNavGlow keyframe block is correctly conditional. No dead or unused
- * declarations found. Specificity-based override structure preserved exactly.
+ * CORRECTION to a prior "FIX #8 (AUDIT)" note that had claimed this rule
+ * was already in active use everywhere: grepping every JS and HTML file
+ * in the project turned up zero references to .volt-lightning-canvas —
+ * #splash-lightning-canvas in index.html was instead duplicating its
+ * positioning inline (position:absolute; top/left:50%;
+ * transform:translate(-50%,-50%); pointer-events:none), only with
+ * z-index:1 instead of this rule's z-index:0. Now wired up: that
+ * element carries class="volt-lightning-canvas" and the inline style
+ * was removed, since z-index:0 still sits below its sibling
+ * .splash-wordmark's z-index:2, so no visual change resulted.
+ * .nav-volt-wrapper canvas is still live via #nav-lightning-canvas.
  */
 .volt-lightning-canvas {
     position: absolute;

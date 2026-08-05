@@ -284,10 +284,10 @@ function initProductFilter(config = {}) {
 // call initProductFilter({ filterContainerSelector: "...", productContainerSelector: "..." })
 // manually instead of relying on this auto-init block.
 document.addEventListener("DOMContentLoaded", () => {
-    // FIX #7: Namespaced under window.__volt to reduce global pollution.
-    // Backward-compatible alias preserved so any existing callers using
-    // window.productFilter continue to work without changes.
+    // Volt storefront uses script.js applyProductFilters() (category + search + price).
+    if (document.querySelector(".filter-bar [data-category]")) return;
+
     window.__volt = window.__volt || {};
     window.__volt.productFilter = initProductFilter();
-    window.productFilter = window.__volt.productFilter; // backward-compat alias
+    window.productFilter = window.__volt.productFilter;
 });
