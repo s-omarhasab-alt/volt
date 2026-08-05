@@ -843,12 +843,12 @@ async function wizNext() {
             return; // الفرامل اللي بتمنعه يكمل
         }
         wizData.idNum = v;
-
+    
     } else if (wizStep === 4) {
         let v = document.getElementById("wiz-phone").value.trim();
 
         if (v === "") {
-            wizData.phone = "بدون إيميل";
+            wizData.email = "بدون إيميل";
         } else {
             v = v.replace(/\s+/g, ""); // إزالة المسافات
 
@@ -864,13 +864,13 @@ async function wizNext() {
                     .replace("@hotmil.com", "@hotmail.com");
             }
             // 💡 ميزة جديدة: توحيد شكل الإيميل لحروف صغيرة
-            wizData.phone = v.toLowerCase();
+            wizData.email = v.toLowerCase();
 
             // التحقق من تكرار الإيميل حصرياً في Firestore
             let existingEmail = false;
             if (window.voltFirebase && typeof window.voltFirebase.findUserByEmail === "function") {
                 try {
-                    existingEmail = !!(await window.voltFirebase.findUserByEmail(wizData.phone));
+                    existingEmail = !!(await window.voltFirebase.findUserByEmail(wizData.email));
                 } catch (e) {
                     console.error("wizNext: فشل التحقق من الإيميل في Firestore", e);
                 }
