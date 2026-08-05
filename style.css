@@ -2057,15 +2057,6 @@ background-color: var(--green);
     box-shadow: 0 30px 70px -20px rgba(0, 0, 0, calc(var(--ssc-split, 0) * 0.55));
 }
 
-.ssc__face--back img {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-}
-
 .ssc__face--front {
     background: transparent;
 }
@@ -2077,31 +2068,67 @@ background-color: var(--green);
     opacity: 1;
 }
 
+/* ── ظهر الكارت: صورة تملأ الجزء الأعلى + نص في الأسفل ── */
 .ssc__face--back {
     transform: rotateY(180deg);
     background: var(--ssc-bg-color, #1c1c1c);
     color: var(--ssc-fg-color, #fff);
-    padding: 2.25rem;
+    padding: 0;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    justify-content: flex-end;
+    overflow: hidden;
+}
+
+/* الصورة تاخد الجزء الأعلى (64%) من الكارت */
+.ssc__face--back .back-img-wrap {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 36%;
+}
+
+.ssc__face--back .back-img-wrap img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    border-radius: 0;
+    margin: 0;
+}
+
+/* gradient ناعم من أسفل الصورة للخلفية الداكنة */
+.ssc__face--back .back-img-wrap::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 70px;
+    background: linear-gradient(to bottom, transparent, #1c1c1c);
+}
+
+/* منطقة النص في أسفل الكارت */
+.ssc__face--back .back-text {
+    position: relative;
+    z-index: 2;
+    padding: 1rem 1.4rem 1.5rem;
 }
 
 .ssc__face--back h3 {
-    margin: 0 0 .7rem;
-    font-size: clamp(1.15rem, 1.9vw, 1.5rem);
-    font-weight: 650;
+    margin: 0 0 .4rem;
+    font-size: clamp(1rem, 1.7vw, 1.35rem);
+    font-weight: 700;
     letter-spacing: -0.01em;
     line-height: 1.2;
 }
 
 .ssc__face--back p {
-    margin: 0;
-    font-size: .92rem;
-    line-height: 1.55;
-    opacity: .85;
-    overflow-y: auto;
-    max-height: 100%;
+    margin: 0 0 .55rem;
+    font-size: .88rem;
+    line-height: 1.5;
+    opacity: .82;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2124,12 +2151,16 @@ background-color: var(--green);
 }
 
 @media (max-width: 640px) {
-    .ssc__face--back {
-        padding: 1.4rem;
+    .ssc__face--back .back-text {
+        padding: .85rem 1rem 1.1rem;
+    }
+
+    .ssc__face--back .back-img-wrap {
+        bottom: 38%;
     }
 
     .ssc__face--back p {
-        font-size: .85rem;
+        font-size: .82rem;
     }
 }
 
