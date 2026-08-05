@@ -848,22 +848,31 @@ async function wizNext() {
         let v = document.getElementById("wiz-phone").value.trim();
 
         if (v === "") {
-            wizData.email = "بدون إيميل";
+            // الإيميل اختياري تماماً — سيتم إنشاء إيميل وهمي من رقم الهاتف عند التسجيل
+            wizData.email = "";
         } else {
             v = v.replace(/\s+/g, ""); // إزالة المسافات
 
+            // لو ما فيهاش @ يبقى مش إيميل صحيح — نطلب منه يصحح أو يسيبها فاضية
             if (!v.includes("@")) {
-                v = v + "@gmail.com";
-            } else {
-                // 💡 ميزة جديدة: تصحيح أخطاء الجيميل والياهو والهوتميل
-                v = v.replace("@gimal.com", "@gmail.com")
-                    .replace("@gmil.com", "@gmail.com")
-                    .replace("@gmai.com", "@gmail.com")
-                    .replace("@gamil.com", "@gmail.com")
-                    .replace("@yaho.com", "@yahoo.com")
-                    .replace("@hotmil.com", "@hotmail.com");
+                let errEl = document.getElementById("step4-err");
+                if (errEl) {
+                    errEl.textContent = "⚠️ الإيميل غير صحيح — اكتب إيميل كامل مثال: name@gmail.com أو اتركه فارغاً";
+                    errEl.classList.add("show");
+                }
+                document.getElementById("wiz-phone").style.border = "2px solid red";
+                return;
             }
-            // 💡 ميزة جديدة: توحيد شكل الإيميل لحروف صغيرة
+
+            // تصحيح أخطاء الكتابة الشائعة
+            v = v.replace("@gimal.com", "@gmail.com")
+                .replace("@gmil.com", "@gmail.com")
+                .replace("@gmai.com", "@gmail.com")
+                .replace("@gamil.com", "@gmail.com")
+                .replace("@yaho.com", "@yahoo.com")
+                .replace("@hotmil.com", "@hotmail.com");
+
+            // توحيد شكل الإيميل لحروف صغيرة
             wizData.email = v.toLowerCase();
 
             // التحقق من تكرار الإيميل حصرياً في Firestore
@@ -980,19 +989,28 @@ async function wizSubmit() {
     }
 
     try {
-        // 1. تجهيز الإيميل: لو كتبه بنستخدمه، لو سابه فاضي بنعمله إيميل برقم التليفون
-        const cleanPhone = (wizData.phone || "").replace(/\D/g, "");
-        const email = (wizData.email && wizData.email.trim()) 
-            ? wizData.email.trim() 
+        // 1. تجهيز الإيميل:
+        //    - لو الشخص كتب إيميل حقيقي → نستخدمه
+        //    - لو تركه فاضياً → نعمله إيميل وهمي من رقم الهاتف (idNum)
+        const cleanPhone = (wizData.idNum || "").replace(/\D/g, "");
+        const email = (wizData.email && wizData.email.trim() && wizData.email !== "بدون إيميل")
+            ? wizData.email.trim()
             : `client_${cleanPhone}@volt.com`;
 
         // 2. الفحص المسبق
         try {
-            const existingByEmail = await window.voltFirebase.findUserByEmail(email);
             const existingByIdNum = await window.voltFirebase.findUserByIdNum(wizData.idNum);
-            if (existingByEmail || existingByIdNum) {
-                showToast("🛑 البريد أو رقم الهاتف مسجل من قبل", "warn");
+            if (existingByIdNum) {
+                showToast("🛑 رقم الهاتف مسجل من قبل", "warn");
                 return;
+            }
+            // نتحقق من الإيميل بس لو الشخص كتب إيميل حقيقي (مش الوهمي)
+            if (wizData.email && wizData.email.trim() && wizData.email !== "بدون إيميل") {
+                const existingByEmail = await window.voltFirebase.findUserByEmail(email);
+                if (existingByEmail) {
+                    showToast("🛑 البريد الإلكتروني مسجل من قبل", "warn");
+                    return;
+                }
             }
         } catch (checkErr) {
             console.warn("تعذر الفحص المسبق، سيتم الاعتماد على فحص Firebase المباشر", checkErr);
