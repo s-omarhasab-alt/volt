@@ -1,7 +1,8 @@
 document.addEventListener("DOMContentLoaded", () => {
     const messages = [
         "Half your bugs were a missing GND.",
-        "You've swapped TX and RX more times than you'll admit.",
+        "You've swapped TX and RX more times than you'll admit.", 
+        "Not all engineers wear helmets; in fact, the most successful engineers are those who carry laptops.",
         "It's just one LED. It took you four hours.",
         "The multimeter's still in your hand. You haven't noticed.",
         "You know exactly which page the pinout diagram is on.",
@@ -41,6 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
         "It looks prototype-ugly on the bench, but it’s pure poetry on the oscilloscope.",
         "You don't just lay traces; you quietly convince copper and silicon to talk.",
         "Nobody sees the ten failed revisions hidden behind that single green PCB.",
+      
     ];
 
     const lineEl = document.getElementById("splashPsychLine");

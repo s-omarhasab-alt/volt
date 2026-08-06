@@ -2371,7 +2371,7 @@ background-color: var(--green);
     font-family: Georgia, 'Times New Roman', serif;
     font-style: italic;
     font-weight: 400;
-    font-size: clamp(14px, 1.8vw, 18px);
+    font-size: clamp(14px, 5vw, 28px);
     line-height: 1.6;
     letter-spacing: 0.2px;
     color: var(--amber);
