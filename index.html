@@ -22,9 +22,11 @@
 </head>
 
 <body>
-
-    <!-- SPLASH -->
+<!-- SPLASH -->
     <div id="splash">
+
+        <p class="splash-psych-line" id="splashPsychLine"></p>
+
         <div class="splash-logo">
 
             <svg class="bolt-svg" width="54" height="54" viewBox="0 0 24 24" fill="none">
@@ -33,7 +35,8 @@
             </svg>
             <!-- ⚡ Splash VOLT wrapper مع canvas للدوامة -->
             <div style="position:relative; display:inline-block;">
-                <canvas id="splash-lightning-canvas" class="volt-lightning-canvas"></canvas>
+                <canvas id="splash-lightning-canvas"
+                    style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); pointer-events:none; z-index:1;"></canvas>
                 <span class="splash-wordmark" style="position:relative; z-index:2;"></span>
             </div>
         </div>
@@ -156,8 +159,8 @@
             /* Layer 1 — الثلاث بانلز فوق الصورة، شفافين لحد ما يبدأوا ينفصلوا */
             .ssc__panels {
                 position: absolute;
-                top: 15%;
-                bottom: 15%;
+                top: 3%;
+                bottom: 3%;
                 left: 20%;
                 right: 20%;
                 z-index: 2;
@@ -285,15 +288,31 @@
                 }
             }
 
-            @media (max-width: 640px) {
-                .ssc__face--back {
-                    padding: 1.4rem;
-                }
+@media (max-width: 640px) {
+    .ssc__face--back {
+        padding: 1rem;
+    }
 
-                .ssc__face--back p {
-                    font-size: .85rem;
-                }
-            }
+    .ssc__face--back p {
+        font-size: .75rem;
+    }
+
+    .ssc__face--back .back-text {
+        padding: 0.5rem 1rem 1.1rem;
+    }
+
+    .ssc__face--back h3 {
+        font-size: 1.05rem;
+    }
+
+    .ssc__panels {
+        top: 3%;
+        bottom: 3%;
+        left: 3%;
+        right: 3%;
+        gap: calc(var(--ssc-split, 0) * clamp(3px, 1vw, 16px));
+    }
+}
         </style>
 
         <!-- ============================================== -->
@@ -309,11 +328,7 @@
         <section class="ssc">
             <div class="ssc__sticky">
 
-                <!-- الصورة الرئيسية الكبيرة -->
-                <img class="ssc__hero"
-                    src="https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&h=900&fit=crop"
-                    alt="VOLT Electronics">
-
+                
                 <div class="ssc__hero-scrim" aria-hidden="true"></div>
 
                 <div class="ssc__panels">
@@ -1354,7 +1369,7 @@ function frame() {
     <script src="promoCodeEngine.js"></script>
     <script src="cart-promo.js"></script>
     <script src="script1.js"></script>
-    <script src="Order-verify · js"></script>
+    <script src="order-verify.js"></script>
     <!-- FIX: script2.js was missing from this load order entirely.
              It holds the only auth-gated #adminPanelBtn click handler
              (checks currentUser.role === "admin" via sessionStorage before
@@ -1364,6 +1379,7 @@ function frame() {
     <script src="script2.js"></script>
     <script src="new-script.js"></script>
     <script src="scroll-split.js"></script>
+    <script src="hero-messages.js"></script>
     <!-- نافذة إدارة أكواد الخصم -->
     <div id="promo-modal"
         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; justify-content: center; align-items: center; direction: rtl;">
@@ -1394,7 +1410,7 @@ function frame() {
     <section class="stack" id="stack">
         <div class="stack__item" data-testid="stack-item">
             <article class="stack-card" data-testid="stack-card">
-                <img src="./VOLT2.png" alt="Product">
+                <img src="volt" alt="Product">
                 <div class="card__caption">
                     <h3>Mountain Ridge</h3>
                 </div>
@@ -1422,6 +1438,7 @@ function frame() {
                 </div>
             </article>
         </div>
+        
     </section>
 
     <section class="filler-section filler-section--end">

@@ -304,7 +304,7 @@ nav {
 
 .hero-title {
     font-family: 'Rajdhani', sans-serif;
-    font-size: clamp(38px, 6vw, 72px);
+    font-size: clamp(18px, 10vw, 90px);
     font-weight: 700;
     line-height: 1;
     letter-spacing: 3px;
@@ -1869,7 +1869,10 @@ footer span {
         justify-content: flex-end;
         gap: 8px !important
     }
-
+.nav-cart {
+    font-size: 12px;
+    padding: 8px 14px
+}
     #taskMgmtBtn {
         font-size: 12px;
         padding: 8px 14px
@@ -2006,13 +2009,32 @@ background-color: var(--green);
 .ssc__sticky {
     position: sticky;
     top: 0;
-    /* يفضل تخليها min-height برضه */
-    min-height: 100vh;
-    /* لو المنتجات جوا الكلاس ده، لازم تشيل overflow: hidden أو تخليها visible */
-    overflow: visible;
-    background: var(--ssc-gutter);
+    height: 100vh;
+    overflow: hidden;
+    background: var(--black, #0a0d0a);
 }
-
+.ssc::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 100px;
+    background: linear-gradient(to bottom, var(--black, #1f2d1fc9), transparent);
+    z-index: 3;
+    pointer-events: none;
+}
+.ssc__sticky::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 100px;
+    background: linear-gradient(to top, var(--black, #0a0d0a), transparent);
+    z-index: 3;
+    pointer-events: none;
+}
 .ssc__hero {
     position: absolute;
     inset: 0;
@@ -2026,7 +2048,7 @@ background-color: var(--green);
     position: absolute;
     inset: 0;
     z-index: 1;
-    background: #000;
+    background: #0a0d0a;
     opacity: var(--ssc-scrim, 0);
     pointer-events: none;
     transition: opacity 0.3s ease;
@@ -2290,5 +2312,85 @@ background-color: var(--green);
     .skeleton-line {
         animation: none;
         background: var(--border);
+    }
+}
+/* ===== PSYCHOLOGICAL HERO (above main header) ===== */
+.volt-hero {
+    background: #0d0d12;
+    padding: 100px 60px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+.volt-hero__status {
+    font-family: "SF Mono", "Consolas", "Courier New", monospace;
+    font-size: 13px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: #E6A171;
+    text-shadow: 0 0 8px rgba(230, 161, 113, 0.35);
+    margin: 0 0 18px 0;
+}
+
+.volt-hero__status::after {
+    content: "_";
+    animation: voltBlink 1s step-end infinite;
+}
+
+@keyframes voltBlink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+.volt-hero__headline {
+    font-size: clamp(32px, 5vw, 56px);
+    font-weight: 800;
+    line-height: 1.15;
+    color: #F1F5F9;
+    margin: 0 0 20px 0;
+}
+
+.volt-hero__sub {
+    font-size: 17px;
+    color: #8b8f9a;
+    max-width: 480px;
+    line-height: 1.6;
+    margin: 0;
+}
+
+@media (max-width: 600px) {
+    .volt-hero {
+        padding: 60px 24px;
+    }
+}
+/* ===== SPLASH PSYCHOLOGICAL LINE (above VOLT wordmark) ===== */
+.splash-psych-line {
+    font-family: Georgia, 'Times New Roman', serif;
+    font-style: italic;
+    font-weight: 400;
+    font-size: clamp(14px, 1.8vw, 18px);
+    line-height: 1.6;
+    letter-spacing: 0.2px;
+    color: var(--amber);
+    text-shadow: 0 0 10px rgba(245, 158, 11, 0.25);
+    text-align: center;
+    max-width: 480px;
+    margin: 0 0 24px 0;
+    opacity: 0;
+    animation: splashPsychFadeIn 1s ease 0.4s forwards;
+}
+
+@keyframes splashPsychFadeIn {
+    to { opacity: 1; }
+}
+
+@media (max-width: 480px) {
+    .splash-psych-line {
+        max-width: 85vw;
+        font-size: 14px;
+        margin-bottom: 18px;
     }
 }
