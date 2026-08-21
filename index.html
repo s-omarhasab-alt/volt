@@ -2,34 +2,91 @@
 <html lang="ar" dir="rtl">
 
 <head>
-    <!-- FIX #A: Removed stray </script> closing tag that appeared before any
-         <script> was opened — a dead syntax error in the <head>. -->
-    <script type="module" src="config.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Security (meta equivalents — GitHub Pages: no custom response headers; X-Frame-Options N/A) -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self' https://wa.me; object-src 'none'; frame-src 'none'; script-src 'self' https://www.gstatic.com 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self'; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebase.googleapis.com https://volt-store-67593.firebaseapp.com; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
+    <meta http-equiv="X-Content-Type-Options" content="nosniff">
+    <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=(), payment=()">
+    <script type="module" src="config.js"></script>
+    <!-- Fonts: self-hosted, relative paths — works on GitHub Pages subpaths -->
+    <link rel="preload" href="fonts/cairo-400.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="preload" href="fonts/rajdhani-700.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="fonts.css">
     <link rel="stylesheet" href="new-style.css" />
     <title>VOLT | متجر الإلكترونيات والقطع الذكية</title>
     <link rel="icon"
         href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231db954' d='M13 2L3 14h9l-1 8 10-12h-9z'/%3E%3C/svg%3E">
    
-    <!-- FIX (font-404 pass): رجّعنا Google Fonts CDN بدل التحميل المحلي.
-         كانت فيه @font-face rules بتدور على /fonts/*.woff2 (كانت متكررة في
-         آخر style.css، وكمان في fonts.css اللي مش حتى متحمّل هنا) — الملفات
-         دي مش موجودة في الريبو خالص، فكانت بترمي 404 لكل وزن في كل تحميل
-         صفحة. الـ @font-face rules اتشالت من style.css، وfonts.css اتسابت
-         زي ما هي (مش متحمّلة، مفيش ضرر منها). أوزان الرابط تحت (Cairo
-         400/700/800، Rajdhani 400/700) اتأكدت بـ grep حقيقي على كل
-         font-family/font-weight في style.css وnew-style.css — 800 مستخدمة
-         مرة واحدة بس (.volt-hero__headline)، والباقي bold عادي (700) أو
-         الوزن الافتراضي (400). لو حد ضاف وزن جديد مستقبلًا (500 أو 600
-         مثلاً)، لازم يتضاف هنا في رابط الـ CDN وإلا الخط هيرجع لأقرب وزن
-         متاح تلقائيًا (سلوك المتصفح الطبيعي، مش 404). -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&family=Rajdhani:wght@400;700&display=swap" rel="stylesheet">
+    <!-- Self-hosted fonts: fonts.css + /fonts/*.woff2 (relative paths for GitHub Pages).
+         Re-download after clone: powershell -File scripts/download-fonts.ps1 -->
     <link rel="stylesheet" href="style.css">
     <!-- ⚡ VOLT Lightning Animation -->
     <link rel="stylesheet" href="volt-animation.css">
+
+    <!-- ⚡ SEO/Schema addon pass — metadata only, no visible UI, no CSS. -->
+
+    <!-- 1. META_DESCRIPTION — 147 chars, describes what VOLT actually
+         sells (electronics/Arduino/sensors for engineering students and
+         makers) rather than a generic filler line. -->
+    <meta name="description" content="قطع إلكترونية، آردوينو، ومستشعرات ذكية بأسعار تنافسية لمشاريعك الهندسية والتخرج — توصيل سريع، جودة موثوقة، ودعم فني لكل طلبات المبتدئين والمحترفين.">
+
+    <!-- 2. CANONICAL_TAG — self-referencing, points at the site's main URL. -->
+    <link rel="canonical" href="https://s-omarhasab-alt.github.io/volt/">
+
+    <!-- 3. PRODUCT_DISCOVERY_SIGNAL — STATIC PLACEHOLDER, NOT LIVE DATA.
+         #products (see <main id="products"> further down this file) starts
+         empty in the actual DOM and is populated asynchronously from
+         Firestore after the page loads (see getProducts() in script.js) —
+         there is no real per-product data available at HTML-parse time,
+         and this store carries many products, not one. A single static
+         schema block can only ever be an illustrative example here, never
+         an accurate reflection of current inventory (name/image/price
+         below do NOT correspond to any real product). Do not treat this
+         as a source of truth, and replace it with per-product dynamically
+         generated schema before relying on it for real product-rich-result
+         eligibility in Search Console. -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Product",
+        "name": "مثال: منتج إلكتروني (Placeholder — استبدله ببيانات حقيقية)",
+        "image": "https://s-omarhasab-alt.github.io/volt/placeholder-product.jpg",
+        "description": "بيانات مثال ثابتة لأغراض فحص الـ Schema فقط — ليست منتجاً حقيقياً معروضاً حالياً.",
+        "sku": "PLACEHOLDER-SKU",
+        "offers": {
+            "@type": "Offer",
+            "priceCurrency": "EGP",
+            "price": "0.00",
+            "availability": "https://schema.org/InStock",
+            "url": "https://s-omarhasab-alt.github.io/volt/"
+        }
+    }
+    </script>
+
+    <!-- 4. BREADCRUMB_SCHEMA — Home > Products, pointing at the real
+         #products section that already exists on this page. -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "BreadcrumbList",
+        "itemListElement": [
+            {
+                "@type": "ListItem",
+                "position": 1,
+                "name": "الرئيسية",
+                "item": "https://s-omarhasab-alt.github.io/volt/"
+            },
+            {
+                "@type": "ListItem",
+                "position": 2,
+                "name": "المنتجات",
+                "item": "https://s-omarhasab-alt.github.io/volt/#products"
+            }
+        ]
+    }
+    </script>
 </head>
 
 <body>
@@ -73,6 +130,12 @@
             <li><a href="#projects">المشاريع الهندسية</a></li>
             <li><a href="https://wa.me/201108199917" target="_blank">تواصل معنا</a></li>
         </ul>
+        <!-- SITE_SEARCH: persistent nav search for high-intent shoppers -->
+        <form class="v-shop-addon-nav-search" role="search" aria-label="بحث المنتجات" onsubmit="return false;">
+            <input type="search" id="navSearchInput" data-testid="nav-search-input"
+                placeholder="ابحث عن منتج..." autocomplete="off" enterkeyhint="search">
+            <button type="button" id="navSearchBtn" data-testid="nav-search-btn">بحث</button>
+        </form>
         <div id="nav-auth-area" style="display:flex;gap:10px;align-items:center;">
             <!-- ⚡ TASK MANAGEMENT BUTTON — standalone, independent of admin login -->
             <button id="taskMgmtBtn" class="nav-cart" data-testid="task-mgmt-btn"
@@ -85,6 +148,13 @@
             <button class="nav-cart" id="cartBtn" data-testid="cart-btn">السلة <span class="cart-badge" id="cartCount"
                     data-testid="cart-count">0</span></button>
         </div>
+        <!-- PRODUCT_URL_SIGNAL: crawler-only, visually hidden -->
+        <div class="sr-only" id="productDiscoveryNav" role="navigation" aria-label="روابط المنتجات">
+            <p class="v-shop-addon-product-nav__title">منتجات المتجر</p>
+            <ul class="v-shop-addon-product-nav__list" id="productDiscoveryList">
+                <li><a href="#products">تصفح كل المنتجات</a></li>
+            </ul>
+        </div>
     </nav>
 
     <!-- HERO -->
@@ -95,9 +165,11 @@
         <p class="hero-sub">متجرك الأول لقطع الغيار الإلكترونية، ألواح الآردوينو، والمستشعرات الذكية لتنفيذ مشاريعك
             البرمجية والهندسية بأعلى كفاءة.</p>
         <div class="hero-search">
-            <input type="text" id="searchInput" data-testid="search-input"
-                placeholder="ابحث عن مستشعر، آردوينو، أو قطعة إلكترونية...">
-            <button id="searchBtn" data-testid="search-btn">بحث</button>
+            <form class="v-shop-addon-search-form" role="search" aria-label="بحث المنتجات في الصفحة الرئيسية" onsubmit="return false;">
+                <input type="search" id="searchInput" data-testid="search-input"
+                    placeholder="ابحث عن مستشعر، آردوينو، أو قطعة إلكترونية..." autocomplete="off" enterkeyhint="search">
+                <button type="button" id="searchBtn" data-testid="search-btn">بحث</button>
+            </form>
         </div>
     </header>
 
@@ -483,6 +555,12 @@
             <button class="btn-primary" id="checkoutBtn" data-testid="checkout-btn"
                 style="width:100%;margin-top:20px;font-family:'Cairo',sans-serif;padding:14px;">✅ إتمام عملية
                 الشراء</button>
+            <!-- SHIPPING_RETURNS_CLARITY at checkout entry -->
+            <div class="v-shop-addon-trust-strip" data-testid="cart-trust-strip">
+                <span>🚚 توصيل 2–5 أيام داخل مصر</span>
+                <a href="#shipping-policy">سياسة الشحن</a>
+                <a href="#returns-policy">الإرجاع والاستبدال</a>
+            </div>
         </div>
     </div>
 
@@ -1321,7 +1399,8 @@ function frame() {
                                         </div>
                                         <div class="card-body">
                                             <span class="card-category">${escapeHtml(p.category)}</span>
-                                            <h3 class="card-name" data-testid="card-name-link" data-product-id="${p.id}" onclick="event.stopPropagation(); openProductModal('${p.id}')">${escapeHtml(p.name)}</h3>
+                                            <a class="card-name" href="#/product/${encodeURIComponent(p.id)}" data-testid="card-name-link" data-product-id="${p.id}" onclick="event.preventDefault(); event.stopPropagation(); openProductModal('${p.id}')">${escapeHtml(p.name)}</a>
+                                            ${typeof renderStarsHtml === "function" ? renderStarsHtml((typeof getProductRating === "function" ? getProductRating(p) : { rating: 4.5, count: 12 }).rating, (typeof getProductRating === "function" ? getProductRating(p) : { rating: 4.5, count: 12 }).count, `folder-card-${p.id}`) : ""}
                                             <div class="card-footer">
                                                 <span class="card-price">${p.price} <span>EGP</span></span>
                                             </div>
@@ -1463,7 +1542,26 @@ function frame() {
 
     <footer>
         <p>جميع الحقوق محفوظة &copy; 2026 لمتجر <span>VOLT</span></p>
+        <p class="v-shop-addon-footer-links">
+            <a class="v-shop-addon-footer-link" href="#shipping-policy">سياسة الشحن</a>
+            <span class="v-shop-addon-footer-sep">|</span>
+            <a class="v-shop-addon-footer-link" href="#returns-policy">سياسة الإرجاع والاستبدال</a>
+            <span class="v-shop-addon-footer-sep">|</span>
+            <a class="v-shop-addon-footer-link" href="https://wa.me/201108199917" target="_blank" rel="noopener">تواصل معنا</a>
+        </p>
     </footer>
+
+    <!-- SHIPPING_RETURNS_CLARITY: anchor targets for footer / PDP / cart links -->
+    <section class="v-shop-addon-policy" id="shipping-policy" aria-labelledby="shipping-policy-title">
+        <h2 id="shipping-policy-title">🚚 سياسة الشحن</h2>
+        <p>نوصّل طلباتك داخل جمهورية مصر العربية خلال 2–5 أيام عمل حسب المحافظة. رسوم الشحن تُحسب عند إتمام الطلب وتظهر قبل التأكيد.</p>
+        <p>للطلبات العاجلة أو الشحن لمحافظات بعيدة، تواصل معنا عبر واتساب على <a href="https://wa.me/201108199917" style="color:var(--green);">01108199917</a>.</p>
+    </section>
+    <section class="v-shop-addon-policy" id="returns-policy" aria-labelledby="returns-policy-title">
+        <h2 id="returns-policy-title">↩️ سياسة الإرجاع والاستبدال</h2>
+        <p>يمكنك طلب استبدال أو إرجاع المنتج خلال 7 أيام من الاستلام إذا كان بحالته الأصلية وغير مستخدم، مع الاحتفاظ بالفاتورة أو رقم الطلب.</p>
+        <p>قطع الإلكترونيات المفتوحة أو المستخدمة في مشروع قد لا تكون مؤهلة للإرجاع — راجع فريق الدعم قبل الإرسال.</p>
+    </section>
 
 
 </body>

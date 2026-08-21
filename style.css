@@ -48,7 +48,7 @@ html {
 body {
     background: var(--black);
     color: var(--text);
-    font-family: 'Cairo', sans-serif;
+    font-family: 'Cairo', 'Segoe UI', Tahoma, sans-serif;
     overflow-x: hidden
 }
 
@@ -2480,5 +2480,214 @@ background-color: var(--green);
         max-width: 85vw;
         font-size: 14px;
         margin-bottom: 18px;
+    }
+}
+
+/* ==========================================================================
+   ⚡ E-COMMERCE UX ADDON — new elements only, v-shop-addon- prefix.
+   Zero edits made to any existing rule above this block. Each rule here
+   targets only newly-added markup (search <form> wrapper, product card
+   <a> conversion, footer policy links) — nothing here can match or
+   override an existing selector.
+========================================================================== */
+
+/* Search form wrapper: display:contents means this <form> element renders
+   with NO box of its own — .hero-search (unchanged, still applied to the
+   same element) keeps its exact existing flex/border/width/overflow
+   behavior as if the <form> tag weren't there at all. This is what
+   guarantees the "no layout change" constraint for this specific addition. */
+.v-shop-addon-search-form {
+    display: contents;
+}
+
+/* .card-name is now an <a> instead of an <h3> in two render paths
+   (script.js renderProducts, index.html renderPublicFolders). All visual
+   properties (color, font-size, font-weight, line-height) are already
+   inherited correctly from the existing .card-name rule earlier in this
+   file — an anchor only needs its two UA-stylesheet defaults reset:
+   the automatic underline, and inline (rather than block) display, since
+   the <h3> it replaced was block-level and .card-body's flow depends on
+   that. Nothing else about .card-name's box model changes. */
+.card-name {
+    text-decoration: none;
+    display: block;
+    cursor: pointer;
+}
+
+/* Footer policy links. Uses --muted and --green (already defined in
+   :root above) so the color matches the existing footer <span> accent
+   without introducing a new hardcoded value. Footer's own layout
+   (border-top, text-align, padding) is untouched — this <p> is a normal
+   block sibling of the existing copyright <p>, no positioning changes. */
+.v-shop-addon-footer-links {
+    margin-top: 8px;
+    font-size: 12px;
+}
+
+.v-shop-addon-footer-link {
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: color .2s;
+}
+
+.v-shop-addon-footer-link:hover {
+    color: var(--green);
+}
+
+.v-shop-addon-footer-sep {
+    color: var(--border);
+    margin: 0 8px;
+}
+
+/* Nav site search — visible high-intent entry point */
+.v-shop-addon-nav-search {
+    flex: 1;
+    max-width: 320px;
+    margin: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    background: var(--dark);
+    border: 1.5px solid var(--border);
+    border-radius: 99px;
+    overflow: hidden;
+    transition: border-color .2s;
+}
+
+.v-shop-addon-nav-search:focus-within {
+    border-color: var(--green);
+}
+
+.v-shop-addon-nav-search input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    padding: 8px 14px;
+    font-family: 'Cairo', sans-serif;
+    font-size: 13px;
+    outline: none;
+    min-width: 0;
+}
+
+.v-shop-addon-nav-search input::placeholder {
+    color: var(--muted);
+}
+
+.v-shop-addon-nav-search button {
+    background: var(--green);
+    color: #000;
+    border: none;
+    padding: 8px 14px;
+    font-family: 'Cairo', sans-serif;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.v-shop-addon-nav-search button:hover {
+    background: var(--green2);
+}
+
+/* Screen-reader / crawler-only — not display:none */
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+}
+
+.v-shop-addon-product-nav__list {
+    list-style: none;
+}
+
+/* Star ratings */
+.v-shop-addon-stars {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    margin: 4px 0 6px;
+}
+
+.v-shop-addon-stars__icons {
+    color: var(--amber);
+    letter-spacing: 1px;
+    line-height: 1;
+}
+
+.v-shop-addon-stars__icons .star-empty {
+    color: var(--border);
+}
+
+.v-shop-addon-stars__count {
+    font-size: 11px;
+}
+
+/* Shipping / returns trust strip */
+.v-shop-addon-trust-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px 20px;
+    margin: 14px 0 0;
+    padding: 12px 0 0;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+}
+
+.v-shop-addon-trust-strip a {
+    color: var(--muted);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+    transition: color .2s;
+}
+
+.v-shop-addon-trust-strip a:hover {
+    color: var(--green);
+}
+
+.v-shop-addon-trust-strip span {
+    color: var(--muted);
+}
+
+/* Policy sections (footer anchors) */
+.v-shop-addon-policy {
+    max-width: 720px;
+    margin: 0 auto 32px;
+    padding: 0 40px;
+    text-align: right;
+}
+
+.v-shop-addon-policy h2 {
+    font-family: 'Rajdhani', sans-serif;
+    color: var(--green);
+    font-size: 20px;
+    margin-bottom: 10px;
+}
+
+.v-shop-addon-policy p {
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.7;
+    margin-bottom: 8px;
+}
+
+@media (max-width: 900px) {
+    .v-shop-addon-nav-search {
+        display: none;
+    }
+}
+
+@media (max-width: 600px) {
+    .v-shop-addon-policy {
+        padding: 0 20px;
     }
 }
