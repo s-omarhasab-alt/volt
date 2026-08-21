@@ -98,7 +98,7 @@ let cart = loadCart();
 let currentUser = null; // يحمل بيانات اليوزر الحالية أو الأدمن
 let activeCategory = "all"; // التصنيف النشط في شريط الفلاتر
 let activePriceMax = null; // الحد الأقصى للسعر من السلايدر — null يعني بدون فلترة سعر
-const WA_NUMBER = "201111884419";
+const WA_NUMBER = "201108199917";
 
 // تنظيف أي نص قبل حقنه في innerHTML لمنع DOM-based XSS (نفس الطريقة
 // المستخدمة بالفعل في كود الفولدرز وإدارة المهام أسفل الملف)
@@ -184,8 +184,7 @@ function renderProducts(products) {
     c.innerHTML = products.map(p => `
         <div class="card glow-card" data-id="${p.id}" style="position:relative;">
             ${isAdmin ? `<button class="product-delete-btn" data-testid="product-delete-btn-${p.id}" onclick="deleteProduct(event, '${p.id}')" title="حذف المنتج من المتجر">×</button>` : ''}
-            <div class="card-img" style="position:relative;" onclick="openProductModal('${p.id}')">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}
-                ${p.stock <= 0 ?
+            <div class="card-img" style="position:relative;" onclick="openProductModal('${p.id}')">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}                ${p.stock <= 0 ?
             `<button class="fab-add fab-add--disabled" data-testid="product-add-btn-${p.id}" disabled>×</button>` :
             `<button class="fab-add fab-add--active" id="btn-add-${p.id}" data-testid="product-add-btn-${p.id}" onclick="event.stopPropagation(); openProductModal('${p.id}');" title="عرض المنتج والإضافة للسلة">+</button>`}
             </div>
@@ -294,7 +293,7 @@ async function openProductModal(id) {
     const rows = p.specs ? Object.entries(p.specs).map(([k, v]) => `<div class="spec-row"><span>${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`).join('') : '';
     const maxQty = (p.stock !== undefined && p.stock > 0) ? p.stock : 1;
     document.getElementById("productPageInnerContent").innerHTML = `
-        <div class="modal-img">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="max-width:120px;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}</div>
+        <div class="modal-img">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" decoding="async" style="max-width:120px;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}</div>
         <div class="modal-info">
             <span class="modal-cat">${escapeHtml(p.category)}</span>
             <h3 class="modal-name">${escapeHtml(p.name)}</h3>
@@ -643,6 +642,10 @@ async function updateCartUI() {
 function handleCheckout() {
     document.getElementById("cart-overlay").classList.remove("open");
     if (!cart.length) { showToast("السلة فارغة!", "warn"); return; }
+    // alert-modal بترجع تظهر زي ما كانت بالظبط — العميل لازم يختار: يسجل
+    // دخول، ينشئ حساب، أو يضغط "طلب شراء كزائر" (زرار جديد بيودّي لنفس
+    // شاشة الدفع اللي اتعملت، عن طريق setupModals()). مفيش مسار تلقائي
+    // للزائر من غير ما يختار ده صراحة.
     if (!currentUser) {
         document.getElementById("alert-modal").style.display = "flex";
     } else {
@@ -656,6 +659,9 @@ function handleCheckout() {
 function setupModals() {
     document.getElementById("alertLoginBtn")?.addEventListener("click", () => { document.getElementById("alert-modal").style.display = "none"; openLoginModal(); });
     document.getElementById("alertRegisterBtn")?.addEventListener("click", () => { document.getElementById("alert-modal").style.display = "none"; openRegisterWizard(); });
+    // زرار "طلب شراء كزائر" — بيقفل alert-modal ويفتح شاشة الدفع مباشرة
+    // (openPaymentModal() هي اللي بتعرض حقول الزائر لأن currentUser لسه null هنا).
+    document.getElementById("alertGuestCheckoutBtn")?.addEventListener("click", () => { document.getElementById("alert-modal").style.display = "none"; openPaymentModal(); });
     document.getElementById("alertCloseBtn")?.addEventListener("click", () => { document.getElementById("alert-modal").style.display = "none"; });
 
     document.getElementById("closeLoginBtn")?.addEventListener("click", closeLoginModal);
@@ -1122,6 +1128,12 @@ async function logout() {
     }
     currentUser = null;
     sessionStorage.removeItem("volt_logged_user");
+    // FIX: يمسح أي كود خصم مطبّق قبل الخروج — لو حد سجّل خروج وطلب تاني
+    // كزائر في نفس التبويب من غير ريفريش، مينفعش يفضل الخصم القديم عالق.
+    // الزائر مالوش خصم أصلاً، شوف processGuestOrder().
+    if (typeof window.__voltClearPromoOnLogout === "function") {
+        window.__voltClearPromoOnLogout();
+    }
     updateNavForUser();
     renderProducts(await getProducts()); // إعادة الرندر لإخفاء أدوات الأدمن
     showToast("تم تسجيل الخروج بنجاح", "warn");
@@ -1133,16 +1145,51 @@ async function logout() {
 function openPaymentModal() {
     let total = cart.reduce((s, item) => s + item.price, 0);
     const summary = document.getElementById("paySummary");
-    summary.innerHTML = `
-        <div class="pay-summary-title">تأكيد ملخص الطلب</div>
-        <div class="pay-summary-row"><span>عدد المنتجات:</span><span>${cart.length}</span></div>
-        <div class="pay-summary-row" style="color:var(--muted); font-size: 11px; margin-top:5px; margin-bottom: 5px; border-bottom: none;">
-            التوصيل إلى: <strong style="color:var(--text);">${currentUser.address}</strong>
-        </div>
-        <div class="pay-summary-row" style="border-top: 1px solid var(--border); margin-top: 5px; padding-top: 5px;">
-            <span>الإجمالي المطلوب:</span><span>${total} EGP</span>
-        </div>
-        <!-- قسم كود الخصم للعميل في شاشة الدفع -->
+    const isGuest = !currentUser;
+
+    // FIX: لو زائر (مفيش currentUser)، سطر "التوصيل إلى" بيقرا
+    // currentUser.address مباشرة كان هيرمي خطأ (Cannot read properties
+    // of null). دلوقتي بيتشرط: لو فيه currentUser يعرض عنوانه المحفوظ
+    // زي ما هو بالظبط، لو زائر يعرض placeholder لحد ما يملأ حقل العنوان
+    // تحت (الحقل نفسه، مش عنصر تاني، عشان معندناش مصدرين للعنوان الواحد).
+    const deliveryRow = isGuest
+        ? `<div class="pay-summary-row" style="color:var(--muted); font-size: 11px; margin-top:5px; margin-bottom: 5px; border-bottom: none;">
+            التوصيل إلى: <strong style="color:var(--text);">يرجى إدخال العنوان أدناه</strong>
+        </div>`
+        : `<div class="pay-summary-row" style="color:var(--muted); font-size: 11px; margin-top:5px; margin-bottom: 5px; border-bottom: none;">
+            التوصيل إلى: <strong style="color:var(--text);">${escapeHtml(currentUser.address)}</strong>
+        </div>`;
+
+    // FIX: حقول بيانات الزائر (رقم الهاتف + اسم المهندس + العنوان) —
+    // بتظهر بس لما مفيش currentUser. العميل المسجل بياناته موجودة
+    // بالفعل في currentUser فمفيش داعي يكتبها تاني. الحقول دي فوق فورم
+    // الدفع مباشرة (جوه نفس شاشة الدفع)، مش مودال منفصل، زي ما اتفقنا.
+    //
+    // كلاس guest-input (مش wiz-input) عن قصد: wiz-input بـ padding:13px 16px
+    // مصمم لفورم التسجيل الكبير اللي بياخد الشاشة كلها. جوه payment-modal
+    // (max-width:440px، مساحة أضيق بكتير) نفس الـ padding كان بيخلي 3 حقول
+    // متتالية تاخد مساحة ضخمة على التاب والموبايل. guest-input مُعرّفة في
+    // style.css بحجم أصغر من الأساس، مع تصغيرة إضافية على الموبايل — من غير
+    // ما تأثر على wiz-input نفسها في أي فورم تاني بالموقع.
+    const guestFieldsHtml = isGuest
+        ? `<div style="margin: 15px 0; background: #0e140e; padding: 15px; border-radius: 8px; border: 1px solid var(--border); text-align:right;">
+            <p style="color:var(--green); font-size:13px; font-weight:700; margin-bottom:10px;">بيانات التواصل والتوصيل</p>
+            <input type="text" id="guestEngineerName" data-testid="guest-engineer-name" class="guest-input"
+                placeholder="Engineer Name (الاسم الكامل)" style="direction:rtl; text-align:right;">
+            <input type="text" id="guestPhone" data-testid="guest-phone" class="guest-input"
+                placeholder="رقم الهاتف (01XXXXXXXXXX)" style="direction:ltr; text-align:right;">
+            <input type="text" id="guestAddress" data-testid="guest-address" class="guest-input"
+                placeholder="العنوان بالتفصيل (المدينة، الحي، الشارع)">
+            <p id="guestFieldsErr" class="wiz-error" data-testid="guest-fields-error" style="margin-top:6px;">⚠️ يرجى ملء الاسم ورقم الهاتف والعنوان بشكل صحيح</p>
+        </div>`
+        : "";
+
+    // قسم كود الخصم — بيظهر بس للعميل المسجل. الزائر مش له كود خصم لأنه
+    // مش عميل مسجل ومفيش تتبع لطلباته/تاريخه في القاعدة، فمفيش معنى
+    // لعرض حقل كود خصم له أصلاً.
+    const promoSectionHtml = isGuest
+        ? ""
+        : `<!-- قسم كود الخصم للعميل في شاشة الدفع -->
 <div style="margin: 15px 0; background: #1a1a1a; padding: 15px; border-radius: 8px; border: 1px dashed #1db954;">
     <p style="color: #ccc; font-size: 14px; margin-bottom: 10px; text-align: right;">عندك كود خصم؟ 🎟️</p>
     <div style="display: flex; gap: 10px; direction: rtl;">
@@ -1152,19 +1199,83 @@ function openPaymentModal() {
         </button>
     </div>
     <p id="promoMessage" style="margin-top: 10px; font-size: 14px; font-weight: bold; text-align: center;"></p>
-</div>
+</div>`;
+
+    summary.innerHTML = `
+        <div class="pay-summary-title">تأكيد ملخص الطلب</div>
+        <div class="pay-summary-row"><span>عدد المنتجات:</span><span>${cart.length}</span></div>
+        ${deliveryRow}
+        <div class="pay-summary-row" style="border-top: 1px solid var(--border); margin-top: 5px; padding-top: 5px;">
+            <span>الإجمالي المطلوب:</span><span>${total} EGP</span>
+        </div>
+        ${guestFieldsHtml}
+        ${promoSectionHtml}
     `;
     document.getElementById("payment-modal").style.display = "flex";
 }
 
+// FIX: بتتحقق من حقول الزائر (الاسم/الرقم/العنوان) وترجعهم كـ object لو
+// سليمين، أو null لو حاجة ناقصة/غلط — وفي الحالة دي بتظهر guestFieldsErr
+// وتوقف الفلو. دي بديل مبسّط لتحقق wizNext() الأكمل (نفس شرط رقم الهاتف:
+// 11 رقم ويبدأ بـ 01)، لأن الزائر مش بيعدي على نفس الويزارد خالص.
+function validateGuestFields() {
+    const nameEl = document.getElementById("guestEngineerName");
+    const phoneEl = document.getElementById("guestPhone");
+    const addressEl = document.getElementById("guestAddress");
+    const errEl = document.getElementById("guestFieldsErr");
+    if (!nameEl || !phoneEl || !addressEl) return null; // مش زائر أصلاً (currentUser موجود)
+
+    const name = nameEl.value.trim();
+    const phone = phoneEl.value.trim();
+    const address = addressEl.value.trim();
+
+    const nameOk = name.length >= 3;
+    const phoneOk = phone.length === 11 && phone.startsWith("01");
+    const addressOk = address.length >= 10;
+
+    if (!nameOk || !phoneOk || !addressOk) {
+        if (errEl) {
+            errEl.textContent = !nameOk
+                ? "⚠️ يرجى إدخال الاسم  (3 أحرف على الأقل)"
+                : !phoneOk
+                ? "⚠️ يرجى إدخال رقم هاتف صحيح (11 رقم ويبدأ بـ 01)"
+                : "⚠️ يرجى إدخال العنوان بالتفصيل (10 أحرف على الأقل)";
+            errEl.classList.add("show");
+        }
+        [nameEl, phoneEl, addressEl].forEach(el => el.style.borderColor = "var(--red)");
+        return null;
+    }
+
+    if (errEl) errEl.classList.remove("show");
+    return { name, phone, address };
+}
+
 function choosePayment(method) {
     let total = cart.reduce((sum, item) => sum + item.price, 0);
+    const isGuest = !currentUser;
 
-    // قاعدة الديبوزت للطلبات فوق الـ 1000 جنيه
+    // FIX: الزائر لازم يملأ بياناته الأساسية قبل ما نكمل لأي مسار دفع —
+    // بدون رقم/اسم/عنوان مفيش طريقة نبعت رسالة الواتساب أو نعرض "التوصيل
+    // إلى" صح. التحقق بيحصل هنا (قبل أي فرع تاني) عشان يوقف الزائر بدري
+    // بدل ما يوصل لشاشة "دفع العربون" وبعدين يتضح إن بياناته ناقصة.
+    if (isGuest) {
+        const guestData = validateGuestFields();
+        if (!guestData) return;
+        window.__voltGuestOrderData = guestData; // تخزين مؤقت لحد ما processGuestOrder تستخدمه
+    }
+
+    // قاعدة الديبوزت للطلبات فوق الـ 1000 جنيه — نفس القاعدة للزائر والعميل
+    // المسجل، لكن زرار "إرسال الطلب للمراجعة" بيروح processGuestOrder()
+    // للزائر (مفيش حفظ Firestore) و processFinalOrder() للعميل المسجل
+    // (زي ما كانت بالظبط قبل التعديل ده).
     if (method === 'cash' && total > 1000) {
         let deposit = Math.ceil(total * 0.3);
         const payBox = document.querySelector(".payment-box");
         if (!payBox.dataset.originalHtml) payBox.dataset.originalHtml = payBox.innerHTML;
+
+        const confirmHandler = isGuest
+            ? "processGuestOrder('pending-deposit')"
+            : "processFinalOrder('pending-deposit')";
 
         payBox.innerHTML = `
             <button class="modal-close" onclick="closePaymentModal()" style="right:auto; left:16px;">&times;</button>
@@ -1174,14 +1285,79 @@ function choosePayment(method) {
             </p>
             <div style="background:#0e140e; border:1px dashed var(--amber); padding:15px; border-radius:10px; margin-bottom:20px;">
                 <span style="display:block; color:var(--muted); font-size:12px; margin-bottom:5px;">رقم التحويل (InstaPay):</span>
-                <strong style="color:#fff; font-size:20px; letter-spacing:2px;">01111884419</strong>
+                <strong style="color:#fff; font-size:20px; letter-spacing:2px;">01108199917</strong>
             </div>
-            <button class="btn-primary" style="width:100%; margin-bottom:10px; background:var(--amber); color:#000;" onclick="processFinalOrder('pending-deposit')">⏳ إرسال الطلب للمراجعة</button>
+            <button class="btn-primary" style="width:100%; margin-bottom:10px; background:var(--amber); color:#000;" onclick="${confirmHandler}">⏳ إرسال الطلب للمراجعة</button>
             <button class="btn-secondary" style="width:100%; border-color:var(--border); color:var(--muted);" onclick="resetPaymentModal()">رجوع لاختيار طريقة أخرى</button>
         `;
         return;
     }
-    processFinalOrder(method);
+
+    if (isGuest) {
+        processGuestOrder(method);
+    } else {
+        processFinalOrder(method);
+    }
+}
+
+// FIX: مسار مستقل تمامًا للزائر — واتساب بس، من غير Firestore saveOrder،
+// من غير تحديث مخزون، من غير history، ومن غير أي لمسة لـ currentUser
+// (لأنه أصلاً null هنا). ده متعمّد ومطابق لتعليمات صاحب المشروع: طلب
+// الزائر شكله في نافذة الواتساب بس. processFinalOrder() الأصلية فضلت
+// زي ما هي تمامًا لمسار العميل المسجل، من غير أي تعديل عليها.
+async function processGuestOrder(method) {
+    document.getElementById("payment-modal").style.display = "none";
+    const guestData = window.__voltGuestOrderData;
+    if (!guestData) {
+        // دفاع إضافي: لو حصل استدعاء للدالة دي من غير بيانات محفوظة
+        // (مثلاً لو حد نادى عليها يدوي من الكونسول)، منكملش بأي بيانات فاضية.
+        showToast("⚠️ حدث خطأ، يرجى إعادة إدخال بياناتك", "error");
+        openPaymentModal();
+        return;
+    }
+
+    let methodText = method === 'cash' ? "كاش عند الاستلام" : (method === 'pending-deposit' ? "كاش (بانتظار تحويل الديبوزت)" : "إنستاباي كامل");
+
+    // ملحوظة: مفيش أي منطق كود خصم هنا خالص، ومتعمّد — الزائر مالوش كود
+    // خصم أصلاً (مفيش حقل customerPromoInput في فورمه، شوف openPaymentModal).
+    // مبنقراش window.getCurrentPromoCode() هنا حتى كدفاع إضافي، لأنها بترجع
+    // متغير module-scoped في cart-promo.js ممكن يفضل عالق بقيمة من جلسة
+    // تسجيل دخول سابقة في نفس الـ tab، ومفيش داعي نجازف بقراءتها هنا أصلاً.
+    let originalTotal = cart.reduce((sum, item) => sum + item.price, 0);
+    let total = originalTotal;
+
+    const comment = document.getElementById("orderComment") ? document.getElementById("orderComment").value.trim() : "لا توجد ملاحظات";
+    const finalComment = comment;
+
+    const guestOrderId = "VOLT-GUEST-" + Math.floor(Math.random() * 900000 + 100000);
+    let isPending = method === 'pending-deposit';
+    let deposit = Math.ceil(total * 0.3);
+    let successMessage = isPending
+        ? `<div class="success-icon" style="color:var(--amber); font-size:60px; margin-bottom:15px;">⏳</div>
+           <h3 style="font-family:'Rajdhani',sans-serif; color:var(--amber); font-size:24px; margin-bottom:10px;">طلبك قيد المراجعة!</h3>
+           <p style="color:var(--muted); font-size:14px; margin-bottom:15px; line-height: 1.6;">
+              يرجى تحويل مبلغ العربون (${deposit} ج.م) والتواصل معنا عبر الواتساب لتأكيد طلبك ومراجعته يدوياً.
+           </p>`
+        : `<div class="success-icon" style="color:var(--green); font-size:60px; margin-bottom:15px;">✅</div>
+           <h3 style="font-family:'Rajdhani',sans-serif; color:var(--green); font-size:26px; margin-bottom:10px;">جاهز لإرسال طلبك!</h3>
+           <p style="color:var(--muted); font-size:14px; margin-bottom:15px; line-height:1.6;">اضغط على زرار الواتساب تحت لإرسال تفاصيل طلبك وتأكيده مباشرة.</p>`;
+
+    const itemsSummary = cart.map(i => `${i.name} (${i.price} ج.م)`).join("، ");
+    const waMessage = `مرحباً فولت، أنا ${guestData.name} — رقم هاتفي ${guestData.phone}\nطلبي: ${itemsSummary}\nالإجمالي: ${total} ج.م\nطريقة الدفع: ${methodText}\nالعنوان: ${guestData.address}${comment && comment !== "لا توجد ملاحظات" ? "\nملاحظات: " + comment : ""}`;
+
+    document.getElementById("successContent").innerHTML = `
+        ${successMessage}
+        <div style="background:#0e140e; border:1px solid var(--border); padding:10px; border-radius:8px; margin-bottom:15px; text-align:right;">
+            <p style="color:var(--muted); margin-bottom:8px; font-size:13px;">ُEng:: <strong style="color:var(--green)">${escapeHtml(guestData.name)}</strong></p>
+            <p style="color:var(--muted); margin-bottom:8px; font-size:13px;">رقم الهاتف: <strong style="color:#fff">${escapeHtml(guestData.phone)}</strong></p>
+            <p style="color:var(--muted); margin-bottom:8px; font-size:13px;">طريقة الدفع: <strong style="color:#fff">${methodText}</strong></p>
+            <p style="color:var(--muted); font-size:13px;">العنوان: ${escapeHtml(guestData.address)}</p>
+        </div>
+        <a class="wa-btn" href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(waMessage)}" target="_blank" style="display:flex; align-items:center; justify-content:center; gap:8px; background:#1db954; color:black; padding:12px; border-radius:8px; text-decoration:none; font-weight:bold; margin-bottom:10px;">💬 إرسال الطلب عبر الواتساب</a>
+        <button class="btn-primary" style="width:100%;" onclick="closeSuccessAndClear()">العودة للمتجر</button>
+    `;
+    document.getElementById("success-modal").classList.add("open");
+    window.__voltGuestOrderData = null; // تنظيف بعد الاستخدام
 }
 
 async function processFinalOrder(method) {

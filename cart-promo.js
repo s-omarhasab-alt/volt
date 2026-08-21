@@ -77,9 +77,22 @@
     var PROMO_PATTERN    = /^[A-Z0-9_-]{1,32}$/;
 
     // ── Getter for other modules that need to read the active promo ───────
-    // Read-only surface — no setter exposed to global scope.
+    // Read-only surface — no general setter exposed to global scope.
     window.getCurrentPromoCode = function () {
         return _currentPromoCode;
+    };
+
+    // ── Logout-only clear hook ──────────────────────────────────────────
+    // NOT a general setter — this doesn't let anything set an arbitrary
+    // code, only wipe the current one. Exists specifically so script.js's
+    // logout() can drop any applied promo code and its cached discount
+    // when a user signs out, so a guest checkout in the same tab right
+    // after a logout can never inherit a discount that belonged to the
+    // just-logged-out account. Guests must never receive a discount.
+    window.__voltClearPromoOnLogout = function () {
+        _currentPromoCode = "";
+        _cachedDiscountAmount = 0;
+        _cachedForCartTotal = null;
     };
 
     // ── Shared validator: calls Firestore validatePromoCode (no Supabase

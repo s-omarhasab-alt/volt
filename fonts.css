@@ -1,0 +1,15 @@
+@font-face {
+  font-family: 'Cairo';
+  src: url('/fonts/cairo-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Cairo';
+  src: url('/fonts/cairo-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+/* كرر لباقي الأوزان (700) ولـ Rajdhani (500, 600, 700) */

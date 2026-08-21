@@ -831,30 +831,77 @@ nav {
     flex-wrap: wrap
 }
 
-/* ===== PRODUCT FULL PAGE =====
-   Same show/hide mechanism as .overlay.open (toggle .open, no reload),
-   but fixed to the full viewport instead of a centered box. Content
-   inside reuses .modal-inner/.modal-img/.modal-info/etc. directly —
-   this only supplies the page-level chrome (background, close affordance,
-   scroll container, entrance animation). */
+/* ===== PRODUCT MODAL =====
+   Converted from a full-screen page to a centered modal, same pattern as
+   .overlay/.modal elsewhere in the site: translucent rgba background
+   (not solid) so the store is visible-but-dimmed behind it, and the
+   content sits in a bounded card instead of taking the full viewport.
+
+   overflow-y:auto stays on THIS element (.product-page), not moved onto
+   .product-page-inner — .product-sticky-bar below is position:sticky and
+   depends on .product-page being its scrolling ancestor (see that rule's
+   own comment). Moving the scroll container to the inner box would
+   silently break that stickiness, so only the background/sizing/
+   positioning changed here, not which element scrolls. */
 .product-page {
     display: none;
     position: fixed;
     inset: 0;
     z-index: 300;
-    background: var(--black);
-    overflow-y: auto
+    background: rgba(0, 0, 0, .85);
+    overflow-y: auto;
+    align-items: center;
+    justify-content: center;
+    padding: 20px
 }
 
 .product-page.open {
-    display: block
+    display: flex
 }
 
 .product-page-inner {
-    max-width: 900px;
-    margin: 0 auto;
-    padding: 90px 40px 60px;
+    position: relative;
+    background: var(--card-bg);
+    border: 1.5px solid var(--border);
+    border-radius: 16px;
+    max-width: 700px;
+    width: 100%;
+    margin: auto;
+    padding: 36px;
     animation: modalIn .28s cubic-bezier(.22, 1, .36, 1)
+}
+
+/* ===== PRODUCT MODAL — CONTINUOUS GLOW =====
+   Runs the whole time the modal is open (not just on hover/entrance),
+   per request — a soft pulsing border/shadow so the card reads as "alive"
+   while it's on screen. Same visual language as .glow-card's hover glow
+   elsewhere in the site (green radial glow), but time-driven via
+   @keyframes instead of mouse-position-driven. Gated behind
+   prefers-reduced-motion like every other continuous animation in this
+   file (.volt-hero__status::after, .skeleton-img, etc.) — reduced-motion
+   users get a static soft border instead of the pulse. */
+@media (prefers-reduced-motion: no-preference) {
+    .product-page-inner {
+        animation: modalIn .28s cubic-bezier(.22, 1, .36, 1),
+                   productModalGlow 2.4s ease-in-out .28s infinite;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .product-page-inner {
+        border-color: var(--green-dim)
+    }
+}
+
+@keyframes productModalGlow {
+    0%, 100% {
+        border-color: var(--border);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, .5);
+    }
+    50% {
+        border-color: var(--green-dim);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, .5), 0 0 24px rgba(29, 185, 84, .25);
+    }
 }
 
 /* Sticky price + Add-to-Cart bar. position:sticky (not fixed) because
@@ -897,38 +944,35 @@ nav {
     flex-shrink: 0
 }
 
+/* .product-page-close now mirrors .modal-close (absolute, top-left corner
+   of the card) instead of being fixed to the viewport — it's positioned
+   relative to .product-page-inner now that that element is a bounded
+   card, not the full page. The button also carries class="modal-close"
+   in the HTML for the same visual base; this rule only overrides what
+   differs (kept separate rather than merged into .modal-close itself, so
+   .modal-close's own callers elsewhere are untouched). */
 .product-page-close {
-    position: fixed;
-    top: 82px;
-    right: 40px;
-    background: var(--card-bg);
-    border: 1.5px solid var(--border);
+    position: absolute;
+    top: 16px;
+    left: 16px;
+    background: none;
+    border: none;
     color: var(--muted);
-    padding: 9px 18px;
-    border-radius: 8px;
-    font-family: 'Cairo', sans-serif;
-    font-size: 13px;
-    font-weight: 700;
+    font-size: 22px;
+    line-height: 1;
+    padding: 0;
     cursor: pointer;
-    transition: all .2s;
-    z-index: 301
+    transition: color .2s;
+    z-index: 2
 }
 
 .product-page-close:hover {
-    border-color: var(--green);
     color: var(--green)
 }
 
 @media (max-width: 600px) {
     .product-page-inner {
-        padding: 78px 18px 40px
-    }
-
-    .product-page-close {
-        top: 70px;
-        right: 16px;
-        padding: 8px 14px;
-        font-size: 12px
+        padding: 24px 18px
     }
 
     .product-sticky-bar {
@@ -1345,6 +1389,37 @@ nav {
 
 .wiz-input.error {
     border-color: var(--red)
+}
+
+/* حقول فورم الزائر في شاشة الدفع (payment-modal) — نسخة أصغر من
+   .wiz-input لنفس الأسباب: .wiz-input مصممة لفورم التسجيل الكبير اللي
+   بياخد الشاشة كلها، و.payment-box نفسها max-width:440px فقط، فنفس
+   padding:13px 16px كان بيخلي 3 حقول متتالية تاخد مساحة كبيرة جدًا.
+   نفس الخصائص البصرية (لون، حدود، فوكس) لكن أصغر، مع margin-bottom
+   مدمج هنا بدل ما يتكرر inline على كل حقل في script.js. */
+.guest-input {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    background: #0e140e;
+    border: 1.5px solid var(--border);
+    border-radius: 6px;
+    padding: 9px 12px;
+    color: var(--text);
+    font-family: 'Cairo', sans-serif;
+    font-size: 13px;
+    outline: none;
+    transition: border-color .2s;
+    direction: rtl;
+    margin-bottom: 8px
+}
+
+.guest-input:last-of-type {
+    margin-bottom: 0
+}
+
+.guest-input:focus {
+    border-color: var(--green)
 }
 
 .wiz-error {
@@ -1837,6 +1912,14 @@ footer span {
         padding: 28px 18px
     }
 
+    /* على الموبايل، حقول فورم الزائر تتقلص أكتر شوية — مساحة الشاشة
+       أضيق فمفيش داعي نفس البادينج المستخدم على الشاشات الأكبر. */
+    .guest-input {
+        padding: 8px 10px;
+        font-size: 12px;
+        margin-bottom: 6px
+    }
+
     .pay-options {
         grid-template-columns: 1fr 1fr
     }
@@ -1963,6 +2046,11 @@ footer span {
     .login-box {
         padding: 32px 28px
     }
+
+    /* .guest-input بدون override هنا عن قصد — حجمها الأساسي (معرّف جوه
+       .guest-input نفسها فوق في الملف، قريب من .wiz-input) أصلًا أصغر
+       بكتير من .wiz-input القديمة، وده كافي على مساحة التاب الأوسع من
+       غير الحاجة لتصغيرة إضافية زي الموبايل. */
 }
 
 /* إخفاء المحتوى في البداية وتجهيز الأنيميشن */

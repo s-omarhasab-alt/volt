@@ -11,11 +11,22 @@
     <title>VOLT | متجر الإلكترونيات والقطع الذكية</title>
     <link rel="icon"
         href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%231db954' d='M13 2L3 14h9l-1 8 10-12h-9z'/%3E%3C/svg%3E">
+   
+    <!-- FIX (font-404 pass): رجّعنا Google Fonts CDN بدل التحميل المحلي.
+         كانت فيه @font-face rules بتدور على /fonts/*.woff2 (كانت متكررة في
+         آخر style.css، وكمان في fonts.css اللي مش حتى متحمّل هنا) — الملفات
+         دي مش موجودة في الريبو خالص، فكانت بترمي 404 لكل وزن في كل تحميل
+         صفحة. الـ @font-face rules اتشالت من style.css، وfonts.css اتسابت
+         زي ما هي (مش متحمّلة، مفيش ضرر منها). أوزان الرابط تحت (Cairo
+         400/700/800، Rajdhani 400/700) اتأكدت بـ grep حقيقي على كل
+         font-family/font-weight في style.css وnew-style.css — 800 مستخدمة
+         مرة واحدة بس (.volt-hero__headline)، والباقي bold عادي (700) أو
+         الوزن الافتراضي (400). لو حد ضاف وزن جديد مستقبلًا (500 أو 600
+         مثلاً)، لازم يتضاف هنا في رابط الـ CDN وإلا الخط هيرجع لأقرب وزن
+         متاح تلقائيًا (سلوك المتصفح الطبيعي، مش 404). -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Rajdhani:wght@500;600;700&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;800&family=Rajdhani:wght@400;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <!-- ⚡ VOLT Lightning Animation -->
     <link rel="stylesheet" href="volt-animation.css">
@@ -60,7 +71,7 @@
             <li><a href="#">الرئيسية</a></li>
             <li><a href="#products">المنتجات</a></li>
             <li><a href="#projects">المشاريع الهندسية</a></li>
-            <li><a href="https://wa.me/201111884419" target="_blank">تواصل معنا</a></li>
+            <li><a href="https://wa.me/201108199917" target="_blank">تواصل معنا</a></li>
         </ul>
         <div id="nav-auth-area" style="display:flex;gap:10px;align-items:center;">
             <!-- ⚡ TASK MANAGEMENT BUTTON — standalone, independent of admin login -->
@@ -337,12 +348,12 @@
                     <div class="ssc__panel">
                         <div class="ssc__flip">
                             <div class="ssc__face ssc__face--front">
-                                <img src="https://images.unsplash.com/photo-1553406830-ef2513450d76?w=400&h=600&fit=crop"
-                                    alt="Arduino">
+                                <img src="https://images.unsplash.com/photo-1553406830-ef2513450d76?w=400&h=600&fit=crop&fm=webp&q=75" decoding="async" fetchpriority="high" alt="Arduino">
+                                    
                             </div>
                             <div class="ssc__face ssc__face--back">
                                 <div class="back-img-wrap">
-                                    <img src="https://images.unsplash.com/photo-1553406830-ef2513450d76?w=600&h=700&fit=crop" alt="Arduino Uno R3">
+                                    <img src="https://images.unsplash.com/photo-1553406830-ef2513450d76?w=600&h=700&fit=crop&fm=webp&q=75" loading="lazy" decoding="async" alt="Arduino Uno R3">
                                 </div>
                                 <div class="back-text">
                                     <h3>Arduino Uno R3</h3>
@@ -357,12 +368,12 @@
                     <div class="ssc__panel">
                         <div class="ssc__flip">
                             <div class="ssc__face ssc__face--front">
-                                <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=600&fit=crop"
-                                    alt="Sensor">
+                                <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?w=400&h=600&fit=crop&fm=webp&q=75"
+                                    loading="lazy" decoding="async" alt="Sensor">
                             </div>
                             <div class="ssc__face ssc__face--back">
                                 <div class="back-img-wrap">
-                                    <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&h=700&fit=crop" alt="Ultrasonic Sensor">
+                                    <img src="https://images.unsplash.com/photo-1518770660439-4636190af475?w=600&h=700&fit=crop&fm=webp&q=75" loading="lazy" decoding="async" alt="Ultrasonic Sensor">
                                 </div>
                                 <div class="back-text">
                                     <h3>Ultrasonic Sensor</h3>
@@ -377,12 +388,12 @@
                     <div class="ssc__panel">
                         <div class="ssc__flip">
                             <div class="ssc__face ssc__face--front">
-                                <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?w=400&h=600&fit=crop"
-                                    alt="Module">
+                                <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?w=400&h=600&fit=crop&fm=webp&q=75"
+                                    loading="lazy" decoding="async" alt="Module">
                             </div>
                             <div class="ssc__face ssc__face--back">
                                 <div class="back-img-wrap">
-                                    <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?w=600&h=700&fit=crop" alt="Relay Module 4CH">
+                                    <img src="https://images.unsplash.com/photo-1562408590-e32931084e23?w=600&h=700&fit=crop&fm=webp&q=75" loading="lazy" decoding="async" alt="Relay Module 4CH">
                                 </div>
                                 <div class="back-text">
                                     <h3>Relay Module 4CH</h3>
@@ -428,18 +439,18 @@
         </div>
     </div>
 
-    <!-- PRODUCT FULL PAGE — same #/product/{id} hash routing that used to
-         open modal-overlay above now renders into this section instead.
-         openProductModal() injects into #productPageInnerContent and
-         toggles .open on #product-page exactly like it used to toggle
-         .open on #modal-overlay: same mechanism (class-based show/hide,
-         no reload), full-page layout instead of a centered overlay.
+    <!-- PRODUCT MODAL — same #/product/{id} hash routing that used to open
+         modal-overlay above renders into this section. openProductModal()
+         injects into #productPageInnerContent and toggles .open on
+         #product-page. Converted from a full-page layout to a centered
+         modal (rgba overlay + boxed card, same pattern as .overlay/.modal
+         elsewhere in the site) — see style.css .product-page rules.
          #modal-overlay markup above is left in place; nothing currently
          opens it, but the CSS/testids it depends on are unrelated to this
          section. -->
     <div id="product-page" class="product-page">
         <div class="product-page-inner">
-            <button class="product-page-close" id="closeProductPageBtn" data-testid="close-product-page-btn">&larr; رجوع للمتجر</button>
+            <button class="product-page-close modal-close" id="closeProductPageBtn" data-testid="close-product-page-btn">&times;</button>
             <div class="modal-inner" id="productPageInnerContent"></div>
         </div>
     </div>
@@ -487,6 +498,9 @@
                 <button class="btn-primary" id="alertLoginBtn" data-testid="alert-login-btn">تسجيل الدخول</button>
                 <button class="btn-secondary" id="alertRegisterBtn" data-testid="alert-register-btn">إنشاء حساب
                     جديد</button>
+                <!-- زرار الطلب كزائر — يوديه لشاشة الدفع مباشرة من غير تسجيل دخول -->
+                <button class="btn-secondary" id="alertGuestCheckoutBtn" data-testid="alert-guest-checkout-btn"
+                    style="border-color:var(--amber);color:var(--amber);">طلب شراء كزائر</button>
                 <button class="btn-secondary" id="alertCloseBtn" data-testid="alert-close-btn"
                     style="border-color:var(--border);color:var(--muted);">إلغاء</button>
             </div>
@@ -505,7 +519,7 @@
             <button class="btn-primary" id="doLoginBtn" data-testid="do-login-btn"
                 style="width:100%;padding:13px;">دخول</button>
             <p class="login-switch" style="margin-top:15px; margin-bottom:5px;">
-                <a href="https://wa.me/201111884419" target="_blank"
+                <a href="https://wa.me/201108199917" target="_blank"
                     style="color:var(--amber); text-decoration:none; font-weight:bold;">🔒 نسيت كلمة المرور؟
                     تواصل
                     معنا</a>
@@ -867,7 +881,7 @@
     </div>
 
 
-    <script src="script.js"></script>
+    <script src="script.js" defer></script>
     <!-- ⚡ VOLT SWIRL LIGHTNING ANIMATION SCRIPT ⚡ -->
     <script>
         (function () {
@@ -1365,21 +1379,21 @@ function frame() {
             }
         })();
     </script>
-    <script src="filter.js"></script>
-    <script src="promoCodeEngine.js"></script>
-    <script src="cart-promo.js"></script>
-    <script src="script1.js"></script>
-    <script src="order-verify.js"></script>
+    <script src="filter.js" defer></script>
+    <script src="promoCodeEngine.js" defer></script>
+    <script src="cart-promo.js" defer></script>
+    <script src="script1.js" defer></script>
+    <script src="order-verify.js" defer></script>
     <!-- FIX: script2.js was missing from this load order entirely.
              It holds the only auth-gated #adminPanelBtn click handler
              (checks currentUser.role === "admin" via sessionStorage before
              doing anything) — the unguarded duplicate handler that used to
              live in script.js has been removed. Without this tag, neither
              handler would run and the button would silently do nothing. -->
-    <script src="script2.js"></script>
-    <script src="new-script.js"></script>
-    <script src="scroll-split.js"></script>
-    <script src="hero-messages.js"></script>
+    <script src="script2.js" defer></script>
+    <script src="new-script.js" defer></script>
+    <script src="scroll-split.js" defer></script>
+    <script src="hero-messages.js" defer></script>
     <!-- نافذة إدارة أكواد الخصم -->
     <div id="promo-modal"
         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; justify-content: center; align-items: center; direction: rtl;">
@@ -1410,7 +1424,9 @@ function frame() {
     <section class="stack" id="stack">
         <div class="stack__item" data-testid="stack-item">
             <article class="stack-card" data-testid="stack-card">
-                <img src="volt" alt="Product">
+                <img class="card__img" loading="lazy" decoding="async"
+                    src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' fill='%23121212'%3E%3Ctext x='50%25' y='50%25' fill='%23ff7a00' font-size='32' text-anchor='middle' dy='.3em' font-family='sans-serif'%3EVOLT%3C/text%3E%3C/svg%3E"
+                    alt="Product">
                 <div class="card__caption">
                     <h3>Mountain Ridge</h3>
                 </div>
@@ -1419,7 +1435,7 @@ function frame() {
 
         <div class="stack__item" data-testid="stack-item">
             <article class="stack-card" data-testid="stack-card">
-                <img class="card__img"
+                <img class="card__img" loading="lazy" decoding="async"
                     src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' fill='%23121212'%3E%3Ctext x='50%25' y='50%25' fill='%23ff7a00' font-size='32' text-anchor='middle' dy='.3em' font-family='sans-serif'%3EVOLT%3C/text%3E%3C/svg%3E"
                     alt="product2">
                 <div class="card__caption">
@@ -1430,7 +1446,7 @@ function frame() {
 
         <div class="stack__item" data-testid="stack-item">
             <article class="stack-card" data-testid="stack-card">
-                <img class="card__img"
+                <img class="card__img" loading="lazy" decoding="async"
                     src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='300' fill='%23121212'%3E%3Ctext x='50%25' y='50%25' fill='%23ff7a00' font-size='32' text-anchor='middle' dy='.3em' font-family='sans-serif'%3EVOLT%3C/text%3E%3C/svg%3E"
                     alt="product3">
                 <div class="card__caption">
