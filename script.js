@@ -108,88 +108,6 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-/* ==========================================================================
-   E-COMMERCE UX SIGNALS — reviews, product URLs, shared search
-========================================================================== */
-function productPageUrl(id) {
-    return `${location.origin}${location.pathname}#/product/${encodeURIComponent(id)}`;
-}
-
-function getProductRating(p) {
-    const rating = Number(p.rating);
-    const count = Number(p.reviewCount);
-    if (!Number.isNaN(rating) && rating > 0 && !Number.isNaN(count) && count > 0) {
-        return { rating: Math.min(5, Math.max(1, rating)), count: Math.round(count) };
-    }
-    const seed = String(p.id || p.name || "").split("").reduce((a, c) => a + c.charCodeAt(0), 0);
-    return { rating: 4.2 + (seed % 8) / 10, count: 8 + (seed % 42) };
-}
-
-function renderStarsHtml(rating, count, testIdPrefix) {
-    const full = Math.floor(rating);
-    const half = rating - full >= 0.5;
-    let icons = "";
-    for (let i = 1; i <= 5; i++) {
-        if (i <= full) icons += "★";
-        else if (i === full + 1 && half) icons += "★";
-        else icons += `<span class="star-empty">★</span>`;
-    }
-    const label = `${rating.toFixed(1)} من 5 — ${count} تقييم`;
-    return `<div class="v-shop-addon-stars" data-testid="${testIdPrefix}-stars" aria-label="${escapeHtml(label)}">
-        <span class="v-shop-addon-stars__icons" aria-hidden="true">${icons}</span>
-        <span class="v-shop-addon-stars__count">${rating.toFixed(1)} (${count})</span>
-    </div>`;
-}
-
-function renderTrustStripHtml(testId) {
-    return `<div class="v-shop-addon-trust-strip" data-testid="${testId}">
-        <span>🚚 توصيل 2–5 أيام داخل مصر</span>
-        <a href="#shipping-policy">سياسة الشحن</a>
-        <a href="#returns-policy">الإرجاع والاستبدال</a>
-    </div>`;
-}
-
-function injectProductUrlSignal(products) {
-    const list = document.getElementById("productDiscoveryList");
-    if (!list || !products.length) return;
-
-    list.innerHTML = products.map(p =>
-        `<li><a href="#/product/${encodeURIComponent(p.id)}" data-testid="discovery-link-${escapeHtml(String(p.id))}">${escapeHtml(p.name)}</a></li>`
-    ).join("");
-
-    let ld = document.getElementById("product-itemlist-schema");
-    if (!ld) {
-        ld = document.createElement("script");
-        ld.type = "application/ld+json";
-        ld.id = "product-itemlist-schema";
-        document.head.appendChild(ld);
-    }
-    ld.textContent = JSON.stringify({
-        "@context": "https://schema.org",
-        "@type": "ItemList",
-        "name": "منتجات VOLT",
-        "itemListElement": products.map((p, i) => ({
-            "@type": "ListItem",
-            "position": i + 1,
-            "url": productPageUrl(p.id),
-            "name": p.name
-        }))
-    });
-}
-
-function runUnifiedSearch() {
-    const heroInput = document.getElementById("searchInput");
-    const navInput = document.getElementById("navSearchInput");
-    if (heroInput && navInput && document.activeElement === navInput) {
-        heroInput.value = navInput.value;
-    } else if (heroInput && navInput && document.activeElement === heroInput) {
-        navInput.value = heroInput.value;
-    }
-    const productsSection = document.getElementById("products");
-    if (productsSection) productsSection.scrollIntoView({ behavior: "smooth", block: "start" });
-    applyProductFilters();
-}
-
 // ==========================================================================
 // 🔐 PASSWORD HASHING (SHA-256) — تشفير كلمات المرور قبل التخزين
 // ==========================================================================
@@ -210,8 +128,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupFilters();
     setupSearch();
     await setupPriceFilter();
-    const allProds = await getProducts();
-    injectProductUrlSignal(allProds);
     await applyProductFilters();
     setupCartSystem();
     updateCartBadge();
@@ -265,9 +181,7 @@ function renderProducts(products) {
 
     const isAdmin = currentUser && currentUser.role === "admin";
 
-    c.innerHTML = products.map(p => {
-        const stars = getProductRating(p);
-        return `
+    c.innerHTML = products.map(p => `
         <div class="card glow-card" data-id="${p.id}" style="position:relative;">
             ${isAdmin ? `<button class="product-delete-btn" data-testid="product-delete-btn-${p.id}" onclick="deleteProduct(event, '${p.id}')" title="حذف المنتج من المتجر">×</button>` : ''}
             <div class="card-img" style="position:relative;" onclick="openProductModal('${p.id}')">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}                ${p.stock <= 0 ?
@@ -276,8 +190,7 @@ function renderProducts(products) {
             </div>
             <div class="card-body">
                 <span class="card-category">${escapeHtml(p.category)}</span>
-                <a class="card-name" role="heading" aria-level="3" href="#/product/${encodeURIComponent(p.id)}" onclick="event.preventDefault(); openProductModal('${p.id}')">${escapeHtml(p.name)}</a>
-                ${renderStarsHtml(stars.rating, stars.count, `product-card-${p.id}`)}
+                <h3 class="card-name" onclick="openProductModal('${p.id}')">${escapeHtml(p.name)}</h3>
                 <button class="details-toggle-btn" onclick="event.stopPropagation(); toggleDetailsView('${p.id}');" style="background:none;border:none;color:var(--green);font-size:12px;cursor:pointer;margin-top:5px;text-align:right;font-family:'Cairo',sans-serif;font-weight:bold;">
                     تفاصيل المنتج ▼
                 </button>
@@ -288,8 +201,11 @@ function renderProducts(products) {
                     <span class="card-price">${p.price} <span>EGP</span></span>
                 </div>        
             </div>
-        </div>`;
-    }).join('');
+
+        </div>`).join('');
+         if (window.__volt && window.__volt.microAnimations && typeof window.__volt.microAnimations.onProductsRendered === "function") {
+        window.__volt.microAnimations.onProductsRendered();
+    }
 }
 
 function toggleDetailsView(id) {
@@ -338,21 +254,11 @@ function setupFilters() {
 }
 
 function setupSearch() {
-    const inp = document.getElementById("searchInput");
-    const btn = document.getElementById("searchBtn");
-    const navInp = document.getElementById("navSearchInput");
-    const navBtn = document.getElementById("navSearchBtn");
-
-    const syncFromHero = () => { if (navInp && inp) navInp.value = inp.value; };
-    const syncFromNav = () => { if (inp && navInp) inp.value = navInp.value; };
-
-    btn?.addEventListener("click", () => { syncFromHero(); runUnifiedSearch(); });
-    inp?.addEventListener("keyup", e => { if (e.key === "Enter") { syncFromHero(); runUnifiedSearch(); } });
-    inp?.addEventListener("input", () => { syncFromHero(); applyProductFilters(); });
-
-    navBtn?.addEventListener("click", () => { syncFromNav(); runUnifiedSearch(); });
-    navInp?.addEventListener("keyup", e => { if (e.key === "Enter") { syncFromNav(); runUnifiedSearch(); } });
-    navInp?.addEventListener("input", () => { syncFromNav(); applyProductFilters(); });
+    const inp = document.getElementById("searchInput"), btn = document.getElementById("searchBtn");
+    const go = () => applyProductFilters();
+    btn?.addEventListener("click", go);
+    inp?.addEventListener("keyup", e => { if (e.key === "Enter") go(); });
+    inp?.addEventListener("input", go);
 }
 
 // سلايدر السعر — اختياري تماماً زي في filter.js: لو مفيش منتجات بسعر
@@ -390,17 +296,14 @@ async function openProductModal(id) {
     const p = allProds.find(x => String(x.id) === String(id)); if (!p) return;
     const rows = p.specs ? Object.entries(p.specs).map(([k, v]) => `<div class="spec-row"><span>${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`).join('') : '';
     const maxQty = (p.stock !== undefined && p.stock > 0) ? p.stock : 1;
-    const stars = getProductRating(p);
     document.getElementById("productPageInnerContent").innerHTML = `
         <div class="modal-img">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" decoding="async" style="max-width:120px;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}</div>
         <div class="modal-info">
             <span class="modal-cat">${escapeHtml(p.category)}</span>
             <h3 class="modal-name">${escapeHtml(p.name)}</h3>
-            ${renderStarsHtml(stars.rating, stars.count, `product-modal-${p.id}`)}
             <div class="modal-price">${p.price} <small>EGP</small></div>
             <p class="modal-desc">${escapeHtml(p.desc)}</p>
             <div class="modal-specs"><h4>المواصفات الفنية</h4>${rows}</div>
-            ${renderTrustStripHtml(`product-trust-${p.id}`)}
             <div class="modal-qty" style="display:flex;align-items:center;gap:14px;margin:16px 0;">
                 <span style="font-weight:700;font-size:14px;">الكمية:</span>
                 <div style="display:flex;align-items:center;gap:10px;">
@@ -502,7 +405,6 @@ async function deleteProduct(event, id) {
         let prods = await getProducts();
         prods = prods.filter(p => String(p.id) !== sid);
         saveProducts(prods);
-        injectProductUrlSignal(prods);
         await applyProductFilters();
         if (typeof window.renderPublicFolders === "function") window.renderPublicFolders();
         showToast("تم حذف المنتج بنجاح ✓", "warn");
@@ -565,7 +467,6 @@ async function submitNewProduct() {
 
     prods.push(newProd);
     saveProducts(prods);
-    injectProductUrlSignal(prods);
     renderProducts(prods);
 
     // إغلاق المودال وتنظيف المدخلات
@@ -632,6 +533,17 @@ async function addToCart(event, id) {
             btn.style.color = "#FF7A00";
         }, 1500);
     }
+    const product = cart.find(p => p.id === id);
+    if (product) {
+        trackAddToCart(product);
+        trackMetaAddToCart(product);
+        logFirebaseAnalytics('add_to_cart', {
+            product_id: product.id,
+            product_name: product.name,
+            price: product.price,
+            quantity: product.qty || 1
+        });
+    }
 }
 
 
@@ -653,7 +565,15 @@ async function removeFromCart(i) {
     saveCart();
 }
 
-function updateCartBadge() { const b = document.getElementById("cartCount"); if (b) b.textContent = cart.length; }
+function updateCartBadge() {
+    const b = document.getElementById("cartCount");
+    if (!b) return;
+    const prev = parseInt(b.textContent, 10) || 0;
+    b.textContent = cart.length;
+    if (cart.length > prev && window.__volt && window.__volt.microAnimations && typeof window.__volt.microAnimations.onCartUpdate === "function") {
+        window.__volt.microAnimations.onCartUpdate(cart.length);
+    }
+}
 
 async function updateCartUI() {
     const c = document.getElementById("cartItemsContainer"), t = document.getElementById("cartTotal");
@@ -745,6 +665,15 @@ async function updateCartUI() {
 function handleCheckout() {
     document.getElementById("cart-overlay").classList.remove("open");
     if (!cart.length) { showToast("السلة فارغة!", "warn"); return; }
+        // ✅ TRACKING
+    if (cart.length) {
+        const total = cart.reduce((sum, p) => sum + (p.price * (p.qty || 1)), 0);
+        trackBeginCheckout(cart, total);
+        logFirebaseAnalytics('begin_checkout', {
+            items_count: cart.length,
+            total_value: total
+        });
+    }
     // alert-modal بترجع تظهر زي ما كانت بالظبط — العميل لازم يختار: يسجل
     // دخول، ينشئ حساب، أو يضغط "طلب شراء كزائر" (زرار جديد بيودّي لنفس
     // شاشة الدفع اللي اتعملت، عن طريق setupModals()). مفيش مسار تلقائي
@@ -754,6 +683,7 @@ function handleCheckout() {
     } else {
         openPaymentModal();
     }
+    
 }
 
 /* ==========================================================================
@@ -1208,12 +1138,14 @@ function updateNavForUser() {
         document.getElementById("cartBtn").addEventListener("click", () => { updateCartUI(); document.getElementById("cart-overlay").classList.add("open"); });
         document.getElementById("adminDashboardBtn")?.addEventListener("click", openAdminDashboard);
     } else if (currentUser.role === "admin") {
+        // #taskMgmtBtn no longer rendered in the header — it now lives
+        // as a static button inside #admin-modal (index.html), reachable
+        // only once this admin branch's own "لوحة التحكم ⚙️" button opens
+        // that modal. No listener to attach here anymore.
         area.innerHTML = `
-            <button id="taskMgmtBtn" class="nav-cart" style="background:transparent;color:var(--amber);border:1.5px solid var(--amber);">📋 إدارة المهام</button>
             <span class="nav-user" style="color:var(--amber);">🛡️ لوحة الإدارة</span>
             <button id="adminDashboardBtn" class="nav-cart" style="background:var(--amber); color:#000; border:none; font-weight:bold;">لوحة التحكم ⚙️</button>
             <button class="nav-logout" onclick="logout()" style="background:transparent;color:var(--muted);border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer;">خروج</button>`;
-        document.getElementById("taskMgmtBtn")?.addEventListener("click", () => window.openTaskPasswordGate && window.openTaskPasswordGate());
         document.getElementById("adminDashboardBtn").addEventListener("click", openAdminDashboard);
     } else {
         // لوحة المستخدم والعميل العادي (اليوزر ليس لديه صلاحية إضافة وحذف المنتجات)
@@ -2271,11 +2203,11 @@ function togglePromoStatus(codeName) {
         document.getElementById("taskForm")?.addEventListener("submit", handleTaskFormSubmit);
         document.getElementById("clearAllTasksBtn")?.addEventListener("click", clearAllTasks);
 
-        // The nav button itself: index.html renders it statically inside
-        // #nav-auth-area on load, and updateNavForUser() re-renders it
-        // (with the same id) every time auth state changes. Attach here
-        // for the very first paint, before any login/logout has happened.
-        document.getElementById("taskMgmtBtn")?.addEventListener("click", window.openTaskPasswordGate);
+        // #taskMgmtBtn is no longer in the public header — it's a static
+        // button inside #admin-modal (index.html), wired via its own
+        // inline onclick="window.openTaskPasswordGate && ...". No listener
+        // needed here; openTaskPasswordGate() itself still checks
+        // currentUser.role === "admin" before opening the interface.
     }
 
     if (document.readyState === "loading") {
@@ -2379,7 +2311,285 @@ window.renderPromoTable = function () {
     html += `</table>`;
     container.innerHTML = html;
 };
+/* =========================================================================
+   VOLT ANALYTICS & TRACKING MODULE
+   ========================================================================= */
 
+const ANALYTICS_CONFIG = {
+    ga4Enabled: true,
+    ga4Id: 'G-ZXR42X8RG2',
+    
+    metaPixelEnabled: true,
+    metaPixelId: '1597643028618197',
+    
+    tiktokPixelEnabled: false,
+    tiktokPixelId: '',
+    
+    firebaseAnalyticsEnabled: true,
+    whatsappNotificationsEnabled: false,
+    emailNotificationsEnabled: false
+};
+
+// ─────────────────────────────────────────────────────────────────────────
+// GOOGLE ANALYTICS 4
+// ─────────────────────────────────────────────────────────────────────────
+
+function trackGA4Event(eventName, eventData = {}) {
+    if (!ANALYTICS_CONFIG.ga4Enabled || !window.gtag) return;
+    
+    try {
+        gtag('event', eventName, eventData);
+        console.log('✅ GA4 Event:', eventName, eventData);
+    } catch (err) {
+        console.error('GA4 error:', err);
+    }
+}
+
+function trackProductView(product) {
+    trackGA4Event('view_item', {
+        currency: 'EGP',
+        value: product.price,
+        items: [{
+            item_id: product.id,
+            item_name: product.name,
+            item_category: product.category,
+            price: product.price
+        }]
+    });
+}
+
+function trackAddToCart(product, quantity = 1) {
+    trackGA4Event('add_to_cart', {
+        currency: 'EGP',
+        value: product.price * quantity,
+        items: [{
+            item_id: product.id,
+            item_name: product.name,
+            price: product.price,
+            quantity: quantity
+        }]
+    });
+}
+
+function trackBeginCheckout(cartItems, totalValue) {
+    trackGA4Event('begin_checkout', {
+        currency: 'EGP',
+        value: totalValue,
+        items: cartItems.map(p => ({
+            item_id: p.id,
+            item_name: p.name,
+            price: p.price,
+            quantity: p.qty || 1
+        }))
+    });
+}
+
+function trackPurchase(orderId, cartItems, totalValue) {
+    trackGA4Event('purchase', {
+        transaction_id: orderId,
+        value: totalValue,
+        currency: 'EGP',
+        items: cartItems.map(p => ({
+            item_id: p.id,
+            item_name: p.name,
+            price: p.price,
+            quantity: p.qty || 1
+        }))
+    });
+}
+
+function trackSearch(searchQuery, resultsCount) {
+    trackGA4Event('search', {
+        search_term: searchQuery,
+        result_count: resultsCount
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// META PIXEL
+// ─────────────────────────────────────────────────────────────────────────
+
+function trackMetaPixelEvent(eventName, eventData = {}) {
+    if (!ANALYTICS_CONFIG.metaPixelEnabled || !window.fbq) return;
+    
+    try {
+        fbq('track', eventName, eventData);
+        console.log('✅ Meta Pixel Event:', eventName, eventData);
+    } catch (err) {
+        console.error('Meta Pixel error:', err);
+    }
+}
+
+function trackMetaAddToCart(product) {
+    trackMetaPixelEvent('AddToCart', {
+        content_name: product.name,
+        content_ids: [product.id],
+        content_type: 'product',
+        value: product.price,
+        currency: 'EGP'
+    });
+}
+
+function trackMetaPurchase(orderId, cartItems, totalValue) {
+    trackMetaPixelEvent('Purchase', {
+        content_type: 'product',
+        content_ids: cartItems.map(p => p.id),
+        value: totalValue,
+        currency: 'EGP',
+        content_name: cartItems.map(p => p.name).join(', '),
+        num_items: cartItems.length
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// FIREBASE ANALYTICS
+// ─────────────────────────────────────────────────────────────────────────
+
+async function logFirebaseAnalytics(eventName, eventData = {}) {
+    if (!ANALYTICS_CONFIG.firebaseAnalyticsEnabled) return;
+    
+    try {
+        if (!window.voltFirebase || !window.voltFirebase.db) {
+            console.warn('Firebase not ready');
+            return;
+        }
+        
+        const db = window.voltFirebase.db;
+        const docRef = db.collection('analytics_events').doc();
+        
+        await docRef.set({
+            event: eventName,
+            timestamp: new Date().toISOString(),
+            userId: currentUser?.id || 'guest_' + Date.now(),
+            sessionId: sessionStorage.getItem('volt_session_id') || 'unknown',
+            data: eventData,
+            userAgent: navigator.userAgent,
+            url: window.location.href,
+            referrer: document.referrer
+        });
+        
+        console.log('✅ Firebase Analytics:', eventName);
+    } catch (err) {
+        console.error('Firebase analytics error:', err);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// WHATSAPP NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────
+
+async function sendWhatsAppNotification(phone, message) {
+    if (!ANALYTICS_CONFIG.whatsappNotificationsEnabled) {
+        console.log('WhatsApp notifications disabled');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/send-whatsapp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                phone: phone.replace(/\D/g, ''),
+                message: message
+            })
+        });
+        
+        if (response.ok) {
+            console.log('✅ WhatsApp sent');
+            return await response.json();
+        }
+    } catch (err) {
+        console.error('WhatsApp error:', err);
+    }
+}
+
+async function notifyOrderConfirmation(phone, orderId, total) {
+    const message = `
+📦 تم استقبال طلبك بنجاح!
+
+رقم الطلب: #${orderId}
+الإجمالي: ${total} جنيه
+
+شكراً لاستخدامك VOLT ⚡
+    `.trim();
+    
+    await sendWhatsAppNotification(phone, message);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// EMAIL NOTIFICATIONS
+// ─────────────────────────────────────────────────────────────────────────
+
+async function sendEmailNotification(email, orderId, cartItems, totalValue) {
+    if (!ANALYTICS_CONFIG.emailNotificationsEnabled) {
+        console.log('Email notifications disabled');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/send-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                to: email,
+                subject: `تأكيد الطلب #${orderId} - VOLT`,
+                orderId: orderId,
+                items: cartItems,
+                total: totalValue,
+                orderDate: new Date().toLocaleString('ar-EG')
+            })
+        });
+        
+        if (response.ok) {
+            console.log('✅ Email sent');
+            return await response.json();
+        }
+    } catch (err) {
+        console.error('Email error:', err);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// COMPLETE ORDER TRACKING
+// ─────────────────────────────────────────────────────────────────────────
+
+async function completeOrderWithTracking(orderId, customerPhone, customerEmail, cartItems, totalAmount) {
+    trackPurchase(orderId, cartItems, totalAmount);
+    trackMetaPurchase(orderId, cartItems, totalAmount);
+    
+    await logFirebaseAnalytics('purchase', {
+        order_id: orderId,
+        total: totalAmount,
+        items_count: cartItems.length,
+        customer_type: currentUser ? 'registered' : 'guest'
+    });
+    
+    await notifyOrderConfirmation(customerPhone, orderId, totalAmount);
+    await sendEmailNotification(customerEmail, orderId, cartItems, totalAmount);
+    
+    console.log('✅ Order tracking complete:', orderId);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// EXPORT FUNCTIONS
+// ─────────────────────────────────────────────────────────────────────────
+
+window.VoltAnalytics = {
+    trackGA4Event,
+    trackProductView,
+    trackAddToCart,
+    trackBeginCheckout,
+    trackPurchase,
+    trackSearch,
+    trackMetaAddToCart,
+    trackMetaPurchase,
+    logFirebaseAnalytics,
+    completeOrderWithTracking,
+    sendWhatsAppNotification,
+    sendEmailNotification
+};
+
+console.log('✅ VOLT Analytics Module Loaded');
 // ── إضافة كود جديد ──
 window.addNewPromoCode = function () {
     const code = document.getElementById("newPromoCode").value.trim().toUpperCase();
