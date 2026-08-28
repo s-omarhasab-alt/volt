@@ -280,6 +280,57 @@ nav {
     justify-content: center
 }
 
+/* ===== NAV SEARCH (single, consolidated search field) ===== */
+.v-shop-addon-nav-search {
+    display: flex;
+    align-items: center;
+    background: var(--card-bg);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    width: clamp(150px, 18vw, 230px);
+    transition: border-color .2s
+}
+
+.v-shop-addon-nav-search:focus-within {
+    border-color: var(--green)
+}
+
+.v-shop-addon-nav-search input {
+    flex: 1;
+    min-width: 0;
+    background: transparent;
+    border: none;
+    outline: none;
+    padding: 8px 12px;
+    color: var(--text);
+    font-family: 'Cairo', sans-serif;
+    font-size: 13px;
+    text-align: right
+}
+
+.v-shop-addon-nav-search input::placeholder {
+    color: var(--muted)
+}
+
+.v-shop-addon-nav-search button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 36px;
+    height: 34px;
+    background: var(--green);
+    border: none;
+    cursor: pointer;
+    color: #000;
+    transition: background .2s
+}
+
+.v-shop-addon-nav-search button:hover {
+    background: var(--green2)
+}
+
 /* ===== HERO ===== */
 .hero {
     min-height: 380px;
@@ -1867,11 +1918,22 @@ footer span {
 /* ===== RESPONSIVE ===== */
 @media(max-width:600px) {
     nav {
-        padding: 0 16px
+        padding: 10px 16px;
+        flex-wrap: wrap;
+        row-gap: 10px
     }
 
     .nav-links {
         display: none
+    }
+
+    .v-shop-addon-nav-search {
+        width: clamp(110px, 32vw, 170px)
+    }
+
+    .v-shop-addon-nav-search input {
+        font-size: 12px;
+        padding: 7px 10px
     }
 
     #products {

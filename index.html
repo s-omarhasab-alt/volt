@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- Security (meta equivalents — GitHub Pages: no custom response headers; X-Frame-Options N/A) -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self' https://wa.me; object-src 'none'; frame-src 'none'; script-src 'self' https://www.gstatic.com 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self'; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebase.googleapis.com https://volt-store-67593.firebaseapp.com; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self' https://wa.me; object-src 'none'; frame-src 'none'; script-src 'self' https://www.gstatic.com https://www.googletagmanager.com https://connect.facebook.net 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self'; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebase.googleapis.com https://volt-store-67593.firebaseapp.com https://www.google-analytics.com https://region1.google-analytics.com https://connect.facebook.net; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
     <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=(), payment=()">
@@ -24,6 +24,8 @@
     <link rel="stylesheet" href="style.css">
     <!-- ⚡ VOLT Lightning Animation -->
     <link rel="stylesheet" href="volt-animation.css">
+    <!-- ⚡ VOLT PCB Micro-animations (filter/card/FAB/badge/search/checkout/title) -->
+    <link rel="stylesheet" href="volt-micro-animations.css">
 
     <!-- ⚡ SEO/Schema addon pass — metadata only, no visible UI, no CSS. -->
 
@@ -162,11 +164,16 @@
             <li><a href="#projects">المشاريع الهندسية</a></li>
             <li><a href="https://wa.me/201108199917" target="_blank">تواصل معنا</a></li>
         </ul>
-        <!-- SITE_SEARCH: persistent nav search for high-intent shoppers -->
+        <!-- SITE_SEARCH: single, consolidated search field (nav only) -->
         <form class="v-shop-addon-nav-search" role="search" aria-label="بحث المنتجات" onsubmit="return false;">
-            <input type="search" id="navSearchInput" data-testid="nav-search-input"
+            <input type="search" id="searchInput" data-testid="search-input"
                 placeholder="ابحث عن منتج..." autocomplete="off" enterkeyhint="search">
-            <button type="button" id="navSearchBtn" data-testid="nav-search-btn">بحث</button>
+            <button type="button" id="searchBtn" data-testid="search-btn" aria-label="بحث">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7"></circle>
+                    <line x1="20" y1="20" x2="15.5" y2="15.5"></line>
+                </svg>
+            </button>
         </form>
         <div id="nav-auth-area" style="display:flex;gap:10px;align-items:center;">
             <!-- ⚡ TASK MANAGEMENT BUTTON — standalone, independent of admin login -->
@@ -180,13 +187,6 @@
             <button class="nav-cart" id="cartBtn" data-testid="cart-btn">السلة <span class="cart-badge" id="cartCount"
                     data-testid="cart-count">0</span></button>
         </div>
-        <!-- PRODUCT_URL_SIGNAL: crawler-only, visually hidden -->
-        <div class="sr-only" id="productDiscoveryNav" role="navigation" aria-label="روابط المنتجات">
-            <p class="v-shop-addon-product-nav__title">منتجات المتجر</p>
-            <ul class="v-shop-addon-product-nav__list" id="productDiscoveryList">
-                <li><a href="#products">تصفح كل المنتجات</a></li>
-            </ul>
-        </div>
     </nav>
 
     <!-- HERO -->
@@ -196,13 +196,6 @@
         <h1 class="hero-title"><span id="typewriter"></span></h1>
         <p class="hero-sub">متجرك الأول لقطع الغيار الإلكترونية، ألواح الآردوينو، والمستشعرات الذكية لتنفيذ مشاريعك
             البرمجية والهندسية بأعلى كفاءة.</p>
-        <div class="hero-search">
-            <form class="v-shop-addon-search-form" role="search" aria-label="بحث المنتجات في الصفحة الرئيسية" onsubmit="return false;">
-                <input type="search" id="searchInput" data-testid="search-input"
-                    placeholder="ابحث عن مستشعر، آردوينو، أو قطعة إلكترونية..." autocomplete="off" enterkeyhint="search">
-                <button type="button" id="searchBtn" data-testid="search-btn">بحث</button>
-            </form>
-        </div>
     </header>
 
     <!-- FILTERS -->
@@ -1504,6 +1497,7 @@ function frame() {
     <script src="new-script.js" defer></script>
     <script src="scroll-split.js" defer></script>
     <script src="hero-messages.js" defer></script>
+    <script src="volt-micro-animations.js" defer></script>
     <!-- نافذة إدارة أكواد الخصم -->
     <div id="promo-modal"
         style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 9999; justify-content: center; align-items: center; direction: rtl;">

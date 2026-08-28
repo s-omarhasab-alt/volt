@@ -497,6 +497,10 @@ async function setupCartSystem() {
 
 async function addToCart(event, id) {
     if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+    if (currentUser && currentUser.role === "admin") {
+        showToast("حساب الإدارة لا يمكنه الشراء", "warn");
+        return;
+    }
     let prods = await getProducts();
     const pIndex = prods.findIndex(x => String(x.id) === String(id));
     if (pIndex === -1) return;
