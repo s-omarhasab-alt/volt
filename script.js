@@ -1396,6 +1396,14 @@ async function processGuestOrder(method) {
         <button class="btn-primary" style="width:100%;" onclick="closeSuccessAndClear()">العودة للمتجر</button>
     `;
     document.getElementById("success-modal").classList.add("open");
+
+    // FIX: same gap as processFinalOrder() above — trackPurchase()/
+    // trackMetaPurchase() were never called for guest orders either.
+    // guestOrderId (generated above) was previously unused outside its own
+    // display string; now also passed through here as the transaction id.
+    trackPurchase(guestOrderId, cart, total);
+    trackMetaPurchase(guestOrderId, cart, total);
+
     window.__voltGuestOrderData = null; // تنظيف بعد الاستخدام
 }
 
@@ -1512,6 +1520,19 @@ async function processFinalOrder(method) {
         <button class="btn-primary" style="width:100%;" onclick="closeSuccessAndClear()">العودة للمتجر</button>
     `;
     document.getElementById("success-modal").classList.add("open");
+
+    // FIX: trackPurchase()/trackMetaPurchase() were defined (see ANALYTICS
+    // section near the end of this file) but never called anywhere — every
+    // other funnel step (add_to_cart, begin_checkout) fired correctly, but
+    // the actual purchase event never reached GA4 or Meta Pixel. Wired in
+    // here, at order-submission success, same point trackBeginCheckout()
+    // already fires from in handleCheckout(). Note this fires when the
+    // order is SUBMITTED for review (status "قيد المراجعة" /
+    // "معلق بانتظار العربون" above), not when payment is confirmed
+    // received — consistent with how begin_checkout is already scoped in
+    // this file, not a new assumption introduced here.
+    trackPurchase(newOrder.orderId, cart, total);
+    trackMetaPurchase(newOrder.orderId, cart, total);
 }
 
 function resetPaymentModal() { const payBox = document.querySelector(".payment-box"); if (payBox && payBox.dataset.originalHtml) payBox.innerHTML = payBox.dataset.originalHtml; }
@@ -2451,27 +2472,34 @@ function trackMetaPurchase(orderId, cartItems, totalValue) {
 
 async function logFirebaseAnalytics(eventName, eventData = {}) {
     if (!ANALYTICS_CONFIG.firebaseAnalyticsEnabled) return;
-    
+
     try {
-        if (!window.voltFirebase || !window.voltFirebase.db) {
+        // FIX: previously called window.voltFirebase.db.collection(...).doc()
+        // .set(...) directly — that's the Firebase v8 API. This project's
+        // Firebase SDK is v9 modular (see config.js), where `db` has no
+        // .collection() method at all, so this call threw inside this
+        // exact try/catch on every single invocation and no event was ever
+        // written — silently, since the catch below only logs to console.
+        // Fixed by calling through window.voltFirebase.logAnalyticsEvent(),
+        // a new v9-correct function added in config.js, matching how every
+        // other Firestore write in this file already goes through
+        // window.voltFirebase rather than touching the SDK directly.
+        if (!window.voltFirebase || typeof window.voltFirebase.logAnalyticsEvent !== "function") {
             console.warn('Firebase not ready');
             return;
         }
-        
-        const db = window.voltFirebase.db;
-        const docRef = db.collection('analytics_events').doc();
-        
-        await docRef.set({
+
+        await window.voltFirebase.logAnalyticsEvent({
             event: eventName,
             timestamp: new Date().toISOString(),
-            userId: currentUser?.id || 'guest_' + Date.now(),
+            userId: currentUser?.uid || 'guest_' + Date.now(),
             sessionId: sessionStorage.getItem('volt_session_id') || 'unknown',
             data: eventData,
             userAgent: navigator.userAgent,
             url: window.location.href,
             referrer: document.referrer
         });
-        
+
         console.log('✅ Firebase Analytics:', eventName);
     } catch (err) {
         console.error('Firebase analytics error:', err);
