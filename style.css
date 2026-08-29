@@ -362,6 +362,17 @@ nav {
     min-height: 1.2em
 }
 
+/* على الموبايل، 10vw بتخلي أطول نص في الـ typewriter ("Smart spare
+   parts") ياخد عرض أكبر من المساحة المتاحة جوه padding الـ .hero
+   (369.9px نص مقابل 335px متاح على شاشة 375px، محسوبة من رندر فعلي
+   بنفس الخط) فيتكسر لسطرين. 8vw بيتظبط في سطر واحد على كل عرض من
+   320px لحد 600px، محسوبة بنفس الطريقة. */
+@media (max-width: 600px) {
+    .hero-title {
+        font-size: clamp(16px, 8vw, 90px);
+    }
+}
+
 .hero-title span {
     color: var(--green)
 }
@@ -1955,6 +1966,16 @@ footer span {
         padding: 22px 16px
     }
 
+    /* .modal-inner افتراضياً flex-direction:row (من القاعدة الأساسية) —
+       على الموبايل ده بيخلي الصورة والنص جنب بعض في نفس الصف، فعمود
+       النص (.modal-info) بياخد المساحة المتبقية بعد الصورة بس، اللي
+       اتأكد بالقياس المباشر إنها 67px بس — كل كلمة عربية بتقع في سطر
+       لوحدها. column بيخلي الصورة تاخد صف كامل والنص يتحتها في صف
+       كامل تاني، فعمود النص بيرجع ياخد عرض الحاوية بالكامل (297px). */
+    .modal-inner {
+        flex-direction: column;
+    }
+
     .modal-img {
         width: 100%;
         height: 180px;
@@ -1963,6 +1984,21 @@ footer span {
 
     .modal-info {
         min-width: 0
+    }
+
+    /* .modal-qty معرّفة بـ inline style بدون wrap في script.js (display:flex
+       بدون flex-wrap)، فمجموع عناصرها (تسمية + زرار ناقص + رقم + زرار
+       زيادة) كان بيفيض عن عرض الشاشة الضيقة ويقطع زرار الزيادة والرقم
+       برة حدود الرؤية. flex-wrap يسمح لها تلف صف تاني، وتقليل الفجوات
+       يحافظ على تجمّع عناصر التحكم في الكمية كوحدة بصرية واحدة. */
+    .modal-qty {
+        flex-wrap: wrap;
+        gap: 8px !important;
+        margin: 12px 0 !important;
+    }
+
+    .modal-qty > div {
+        gap: 6px !important;
     }
 
     .wizard-box,
@@ -2007,23 +2043,60 @@ footer span {
     }
 
     #nav-auth-area {
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
         justify-content: flex-end;
-        gap: 8px !important
+        gap: 6px !important
     }
-.nav-cart {
-    font-size: 12px;
-    padding: 8px 14px
-}
+
+    /* أزرار النافبار على الموبايل: نخفي النص المباشر جوه الزرار بصرياً
+       (font-size:0) بدل ما نشيله من الـ DOM — كده بيفضل موجود لقارئ
+       الشاشة وأي كود بيقرا textContent، وبيشتغل على الحالات التلاتة
+       (زائر/عميل/أدمن) اللي updateNavForUser() في script.js بيرندرهم،
+       لأنهم كلهم بيستخدموا نفس الـ id/class. أيقونة واحدة بديلة لكل
+       زرار عبر ::before، بمحتوى مختلف حسب هوية الزرار. */
+    .nav-cart,
+    .nav-logout {
+        font-size: 0;
+        padding: 10px;
+        width: 40px;
+        height: 40px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0
+    }
+
+    #loginBtn::before   { content: "🔑"; font-size: 17px }
+    #registerBtn::before { content: "👤"; font-size: 17px }
+    #cartBtn::before     { content: "🛒"; font-size: 17px }
+    #adminDashboardBtn::before { content: "⚙️"; font-size: 17px }
+    .nav-logout::before  { content: "🚪"; font-size: 15px }
+
+    /* cart-badge عنصر <span> منفصل جوه #cartBtn — من غير override هيرث
+       font-size:0 من الأب ويختفي العداد نفسه، فلازم نرجّعه خط مقروء
+       صريح، ومركز على زاوية الزرار المربّع الجديد. */
+    .nav-cart .cart-badge {
+        font-size: 10px;
+        position: absolute;
+        top: -4px;
+        right: -4px
+    }
 
     .card-img {
         height: 120px;
     }
 
+    /* bottom:-22px (نص الزرار برة الصورة، نص متراكب فوقها) كان بياخد
+       جزء ملحوظ من ارتفاع .card-img (120px بس هنا على الموبايل)، فبيبان
+       الفاب كأنه "الزرار الوحيد الموثوق" بدل الصورة كلها. -10px بيسيب
+       حجم اللمس 44px كامل زي ما هو (مهم لسهولة الضغط)، لكن بيحرك أغلب
+       الزرار للمساحة الفاضية تحت الصورة بدل ما يتراكب فوقها، فمساحة
+       أكبر من الصورة نفسها تفضل قابلة للضغط فعليًا. breakpoint التابلت
+       (601-1024px) الأسفل له نفس القيمة الأصلية -22px ومش جزء من هذا التعديل. */
     .fab-add {
         width: 44px;
         height: 44px;
-        bottom: -22px;
+        bottom: -10px;
         font-size: 24px
     }
 
@@ -2140,6 +2213,15 @@ background-color: var(--green);
     --ssc-scroll-distance: 130vh;
     --ssc-gutter: #0b0b0c;
     --ssc-font: ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+/* نفس القيمة المعدّلة في index.html (inline <style> جوه #scrollSplitCard)
+   — لازم الاتنين يفضلوا متطابقين، لأن الملفين بيعرّفوا نفس المتغير على
+   :root وأي فرق بينهم هيخلق تعارض قيمة حسب ترتيب الـ cascade. */
+@media (max-width: 600px) {
+    :root {
+        --ssc-scroll-distance: 60vh;
+    }
 }
 
 .ssc {

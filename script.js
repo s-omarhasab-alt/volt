@@ -323,7 +323,15 @@ async function openProductModal(id) {
             <button class="btn-primary" data-testid="sticky-add-to-cart-btn-${p.id}" onclick="addModalQtyToCart('${p.id}')">Add item</button>
         </div>`;
     document.getElementById("product-page").classList.add("open");
-    window.scrollTo(0, 0);
+    // FIX: كانت window.scrollTo(0,0) — بتسكرل صفحة المتجر الأساسية
+    // لفوق، رغم إن #product-page عندها position:fixed وأصلاً مش
+    // متأثرة بموضع سكرول الصفحة اللي وراها. النتيجة: لو كنت نازل في
+    // قائمة المنتجات ودست على منتج تحت، الصفحة كلها كانت بترجع لفوق
+    // فجأة. بدلناها بسكرول جوه #product-page نفسها (اللي هي فعلاً
+    // الحاوية القابلة للسكرول، overflow-y:auto) — كده كل منتج بيفتح من
+    // أول صفحته هو (مش فاضل في موضع سكرول منتج سابق)، من غير ما نلمس
+    // موضع سكرول صفحة المتجر خالص.
+    document.getElementById("product-page").scrollTo(0, 0);
 
     // نحدّث الـ URL بدون إعادة تحميل الصفحة، عشان يبقى للمنتج رابط
     // مباشر قابل للمشاركة، ونحدّث عنوان الصفحة عشان يبان في تبويب

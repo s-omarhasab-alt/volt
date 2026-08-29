@@ -242,6 +242,17 @@
                 --ssc-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
             }
 
+            /* على الموبايل، 130vh بتخلي مسافة السكرول المطلوبة جوه القسم
+               ده لوحده حوالي 870-1100px (أطول من طول الشاشة نفسها) —
+               ده سبب الإحساس بفراغ أسود طويل أثناء السكرول. 60vh بيقرّبها
+               لحوالي شاشة واحدة بس، مع إنها لسه كافية لنوافذ توقيت
+               الفليب (FLIP_WINDOWS) في scroll-split.js تتفرق بصرياً. */
+            @media (max-width: 600px) {
+                :root {
+                    --ssc-scroll-distance: 60vh;
+                }
+            }
+
             .ssc {
                 position: relative;
                 font-family: var(--ssc-font);
@@ -431,6 +442,27 @@
         left: 3%;
         right: 3%;
         gap: calc(var(--ssc-split, 0) * clamp(3px, 1vw, 16px));
+    }
+}
+
+/* على الموبايل (≤480px) عرض كل بانل من التلاتة بيبقى تقريباً 98-115px
+   بس (3 بانلز بالتساوي على 94% من عرض الشاشة) — مساحة ضيقة جداً لعرض
+   جملة وصف عربية كاملة، فبتتكسر لحروف منفصلة غير مقروءة. الحل: نخفي
+   الوصف بالكامل هنا ونكتفي بالعنوان + السعر، اللي فعلاً بيتظبطوا في
+   العرض ده. مفيش أي تعديل في scroll-split.js مطلوب — بيتعامل مع
+   opacity/aria-hidden بس، مش بيعتمد على وجود الوصف. */
+@media (max-width: 480px) {
+    .ssc__face--back p {
+        display: none;
+    }
+
+    .ssc__face--back h3 {
+        font-size: 0.85rem;
+        line-height: 1.15;
+    }
+
+    .ssc__face--back .back-text {
+        padding: 0.4rem 0.5rem 0.7rem;
     }
 }
         </style>
