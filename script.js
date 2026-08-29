@@ -2481,8 +2481,8 @@ async function logFirebaseAnalytics(eventName, eventData = {}) {
         // exact try/catch on every single invocation and no event was ever
         // written — silently, since the catch below only logs to console.
         // Fixed by calling through window.voltFirebase.logAnalyticsEvent(),
-        // a new v9-correct function added in config.js, matching how every
-        // other Firestore write in this file already goes through
+        // a v9-correct function in config.js, matching how every other
+        // Firestore write in this file already goes through
         // window.voltFirebase rather than touching the SDK directly.
         if (!window.voltFirebase || typeof window.voltFirebase.logAnalyticsEvent !== "function") {
             console.warn('Firebase not ready');
