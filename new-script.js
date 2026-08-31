@@ -135,4 +135,36 @@
             window.__voltStackObserver = null;
         }
     };
+
+    /* === #4: scanner line sweep, added as a SEPARATE observer from the
+       one above — does not read from or write to itemIndexMap, does not
+       touch the "card"/"card--recede" selector used by the pre-existing
+       recede logic above (that logic's own querySelector(".card") targets
+       a class that does not exist on these elements — the real class is
+       "stack-card", confirmed against index.html — so it currently never
+       matches anything; left completely untouched here per the
+       add-only instruction, not fixed, since fixing it was not asked for).
+       This new observer targets .stack-card directly by its real,
+       confirmed class name, so the scanner sweep works independently of
+       whether the pre-existing recede effect above is firing. === */
+    if ("IntersectionObserver" in window) {
+        var scanReduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+        var scanObserver = new IntersectionObserver(function (entries) {
+            entries.forEach(function (entry) {
+                if (!entry.isIntersecting || scanReduceMotion.matches) return;
+                var card = entry.target;
+                card.classList.remove("volt-stack-scan");
+                void card.offsetWidth;
+                card.classList.add("volt-stack-scan");
+                setTimeout(function () {
+                    card.classList.remove("volt-stack-scan");
+                }, 1200);
+            });
+        }, { root: null, rootMargin: "0px 0px -40% 0px", threshold: 0 });
+
+        items.forEach(function (item) {
+            var card = item.querySelector(".stack-card");
+            if (card) scanObserver.observe(card);
+        });
+    }
 })();

@@ -73,7 +73,23 @@ async function getProducts() {
     }
 }
 
-const saveProducts = (prods) => localStorage.setItem("volt_products", JSON.stringify(prods));
+// FIX (pagination): كانت بتستبدل الكاش بالكامل بكل استدعاء — ده كان
+// هيكسر المفضلة (script1.js بيقرأ من نفس المفتاح ده) وأي مكان تاني بيعتمد
+// على إن منتج شافه العميل قبل كده لسه موجود في الكاش بعد ما يعمل scroll
+// لصفحة تانية. دلوقتي union بالـ id: أي منتج جديد يتضاف/يتحدّث، أي منتج
+// قديم في الكاش يفضل موجود من غير ما يتلمس.
+function saveProducts(newProds) {
+    let existing = [];
+    try {
+        existing = JSON.parse(localStorage.getItem("volt_products")) || [];
+    } catch (e) { existing = []; }
+
+    const merged = existing.filter(
+        p => !newProds.some(np => String(np.id) === String(p.id))
+    ).concat(newProds);
+
+    localStorage.setItem("volt_products", JSON.stringify(merged));
+}
 const getUsers = () => JSON.parse(localStorage.getItem("volt_users"));
 const saveUsers = (users) => localStorage.setItem("volt_users", JSON.stringify(users));
 
@@ -99,6 +115,11 @@ let currentUser = null; // يحمل بيانات اليوزر الحالية أ�
 let activeCategory = "all"; // التصنيف النشط في شريط الفلاتر
 let activePriceMax = null; // الحد الأقصى للسعر من السلايدر — null يعني بدون فلترة سعر
 const WA_NUMBER = "201108199917";
+
+// ── حالة الـ Pagination — بديل عن جلب كل المنتجات دفعة واحدة ──
+let currentPageCursor = null;   // آخر document شفناه (null = أول صفحة)
+let currentPageHasMore = true;  // هل فيه صفحة بعد كده
+let isLoadingNextPage = false;  // قفل يمنع تحميل مزدوج أثناء الـ scroll
 
 // تنظيف أي نص قبل حقنه في innerHTML لمنع DOM-based XSS (نفس الطريقة
 // المستخدمة بالفعل في كود الفولدرز وإدارة المهام أسفل الملف)
@@ -129,6 +150,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupSearch();
     await setupPriceFilter();
     await applyProductFilters();
+    setupInfiniteScroll(); // FIX (pagination): مرة واحدة بس — sentinel ثابت بعد #products
     setupCartSystem();
     updateCartBadge();
     typeWriter();
@@ -171,20 +193,28 @@ function renderProductSkeletons(count = 8) {
 /* ==========================================================================
    PRODUCTS RENDER & MANAGEMENT
 ========================================================================== */
-function renderProducts(products) {
-    const c = document.getElementById("products");
-    if (!c) return;
-    if (!products.length) {
-        c.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--muted);padding:40px;">لم يتم العثور على أي منتجات.</p>`;
-        return;
-    }
+// === #20: "جديد" window computation, additive only. Products with no
+// createdAt field (every product that existed before this change) are
+// safely treated as NOT new — isVoltNew() returns false for undefined/
+// invalid dates rather than throwing or defaulting to true.
+const VOLT_NEW_WINDOW_MS = 3 * 24 * 60 * 60 * 1000;
+function isVoltNew(p) {
+    if (!p.createdAt) return false;
+    const created = new Date(p.createdAt).getTime();
+    if (Number.isNaN(created)) return false;
+    return (Date.now() - created) < VOLT_NEW_WINDOW_MS;
+}
 
+// FIX (pagination): استُخرجت من جوه renderProducts() عشان appendProductCards()
+// الجديدة (تحت) تستخدم بالظبط نفس الـ HTML، من غير ما نكرر نفس الـ template
+// مرتين في مكانين مختلفين (ده كان هيخلي أي تعديل مستقبلي على شكل الكارت
+// يحتاج تتعمل في مكانين، وده مصدر أخطاء مضمون بمرور الوقت).
+function buildProductCardHTML(p) {
     const isAdmin = currentUser && currentUser.role === "admin";
-
-    c.innerHTML = products.map(p => `
+    return `
         <div class="card glow-card" data-id="${p.id}" style="position:relative;">
             ${isAdmin ? `<button class="product-delete-btn" data-testid="product-delete-btn-${p.id}" onclick="deleteProduct(event, '${p.id}')" title="حذف المنتج من المتجر">×</button>` : ''}
-            <div class="card-img" style="position:relative;" onclick="openProductModal('${p.id}')">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}                ${p.stock <= 0 ?
+            <div class="card-img${isVoltNew(p) ? ' volt-new-scan-active' : ''}" style="position:relative;" onclick="openProductModal('${p.id}')">${isVoltNew(p) ? '<span class="volt-new-tag">جديد</span>' : ''}${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}                ${p.stock <= 0 ?
             `<button class="fab-add fab-add--disabled" data-testid="product-add-btn-${p.id}" disabled>×</button>` :
             `<button class="fab-add fab-add--active" id="btn-add-${p.id}" data-testid="product-add-btn-${p.id}" onclick="event.stopPropagation(); openProductModal('${p.id}');" title="عرض المنتج والإضافة للسلة">+</button>`}
             </div>
@@ -192,7 +222,7 @@ function renderProducts(products) {
                 <span class="card-category">${escapeHtml(p.category)}</span>
                 <h3 class="card-name" onclick="openProductModal('${p.id}')">${escapeHtml(p.name)}</h3>
                 <button class="details-toggle-btn" onclick="event.stopPropagation(); toggleDetailsView('${p.id}');" style="background:none;border:none;color:var(--green);font-size:12px;cursor:pointer;margin-top:5px;text-align:right;font-family:'Cairo',sans-serif;font-weight:bold;">
-                    تفاصيل المنتج ▼
+                    تفاصيل المنتج <span class="volt-details-arrow">▼</span>
                 </button>
                 <div id="pd${p.id}" class="details-panel" style="display:none;font-size:12px;color:var(--text);margin-top:8px;padding:8px;background:var(--dark);border-radius:6px;border-right:2px solid var(--green);">
                     ${escapeHtml(p.desc)}
@@ -202,15 +232,101 @@ function renderProducts(products) {
                 </div>        
             </div>
 
-        </div>`).join('');
+        </div>`;
+}
+
+function renderProducts(products) {
+    const c = document.getElementById("products");
+    if (!c) return;
+    if (!products.length) {
+        c.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--muted);padding:40px;">لم يتم العثور على أي منتجات.</p>`;
+        return;
+    }
+
+    c.innerHTML = products.map(p => buildProductCardHTML(p)).join('');
          if (window.__volt && window.__volt.microAnimations && typeof window.__volt.microAnimations.onProductsRendered === "function") {
         window.__volt.microAnimations.onProductsRendered();
+    }
+}
+
+// FIX (pagination): بتضيف كروت جديدة تحت الموجودين في #products، من غير
+// ما تمسح أو تعيد رندر اللي اتحمّل قبل كده. بتستخدم بالظبط نفس
+// buildProductCardHTML اللي renderProducts() فوق بتستخدمها، فمفيش فرق
+// بصري ممكن يحصل بين الصفحة الأولى والصفحات اللي بعدها.
+function appendProductCards(products) {
+    const c = document.getElementById("products");
+    if (!c || !products.length) return;
+    c.insertAdjacentHTML('beforeend', products.map(p => buildProductCardHTML(p)).join(''));
+    if (window.__volt && window.__volt.microAnimations && typeof window.__volt.microAnimations.onProductsRendered === "function") {
+        window.__volt.microAnimations.onProductsRendered();
+    }
+}
+
+// FIX (pagination): sentinel عنصر غير مرئي بعد #products مباشرة — أول ما
+// يدخل نطاق الرؤية (rootMargin بيخليه يتفعّل قبل ما العميل يوصله فعلياً
+// بـ 300px، عشان التحميل يحصل بسلاسة من غير ما العميل يحس بوقفة)،
+// loadNextProductsPage() بتتنادى. بتتنادى مرة واحدة بس عند التحميل
+// الأول — #products نفسه (والـ sentinel بعده) مش بيتمسحوا من الـ DOM
+// أبداً، فمفيش داعي تعيد إنشاء الـ observer مع كل تغيير فلتر.
+function setupInfiniteScroll() {
+    const c = document.getElementById("products");
+    if (!c || !("IntersectionObserver" in window)) return;
+    if (document.getElementById("products-scroll-sentinel")) return; // منع تكرار الإعداد
+
+    const sentinel = document.createElement("div");
+    sentinel.id = "products-scroll-sentinel";
+    sentinel.style.cssText = "height:1px;";
+    c.insertAdjacentElement('afterend', sentinel);
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) loadNextProductsPage();
+        });
+    }, { rootMargin: "300px 0px" });
+
+    observer.observe(sentinel);
+}
+
+// FIX (pagination): مؤشر بصري بسيط ("جاري تحميل المزيد...") بيظهر أثناء
+// جلب الصفحة الجاية، ويختفي بمجرد ما تخلص — عشان العميل ميحسش إن
+// السكرول "وقف" فجأة وهو مستني.
+function showInfiniteScrollLoader(show) {
+    const c = document.getElementById("products");
+    if (!c) return;
+    let loader = document.getElementById("products-loading-more");
+    if (show) {
+        if (!loader) {
+            loader = document.createElement("div");
+            loader.id = "products-loading-more";
+            loader.style.cssText = "grid-column:1/-1;text-align:center;padding:20px;color:var(--muted);";
+            loader.textContent = "⏳ جاري تحميل المزيد...";
+            c.insertAdjacentElement('afterend', loader);
+        }
+    } else if (loader) {
+        loader.remove();
     }
 }
 
 function toggleDetailsView(id) {
     const el = document.getElementById(`pd${id}`);
     if (el) el.style.display = el.style.display === "block" ? "none" : "block";
+
+    // === #25: arrow rotation + panel fade, purely additive on top of the
+    // display:none/block logic above, which remains the sole source of
+    // truth for layout. volt-details-fade is only added on the block path
+    // (the panel entering the layout); no animation on the hide path,
+    // matching how #21/#22/#26 elsewhere in this batch only animate entry
+    // where a matching exit animation risked fighting display:none timing.
+    const btn = document.querySelector(`[onclick*="toggleDetailsView('${id}')"]`);
+    if (btn) {
+        const isNowOpen = el && el.style.display === "block";
+        btn.classList.toggle("volt-details-open", !!isNowOpen);
+    }
+    if (el && el.style.display === "block") {
+        el.classList.remove("volt-details-fade");
+        void el.offsetWidth;
+        el.classList.add("volt-details-fade");
+    }
 }
 
 function productMatchesSearch(p, q) {
@@ -223,23 +339,61 @@ function productMatchesSearch(p, q) {
     return name.includes(q) || desc.includes(q) || cat.includes(q) || emoji.includes(q) || specs.includes(q);
 }
 
-// نقطة القرار الوحيدة لكل الفلاتر مجتمعة (تصنيف + بحث + سعر) — نفس مبدأ
-// applyFilter() في filter.js: بدل ما كل فلتر يعمل renderProducts() بمفرده
-// بمعزل عن الفلاتر التانية (وبالتالي يمسح أثرها)، الكل بينادي الدالة دي،
-// اللي بتقرأ الحالة النشطة التلاتة مع بعض وترندر مرة واحدة بس.
+// نقطة القرار الوحيدة لكل الفلاتر مجتمعة (تصنيف + بحث + سعر).
+// FIX (pagination): كانت بتجيب كل المنتجات وتفلتر محلياً (.filter()) —
+// دلوقتي بتصفّر حالة الـ pagination وتبدأ query جديد في Firestore نفسه
+// (تصنيف + سعر + بداية اسم)، وترندر أول صفحة (24 منتج) بس. الصفحات
+// اللي بعدها بتتحمّل عن طريق loadNextProductsPage() تحت مع الـ scroll.
 async function applyProductFilters() {
-    const allProds = await getProducts();
-    let filtered = activeCategory === "all" ? allProds : allProds.filter(p => p.category === activeCategory);
-
-    if (typeof activePriceMax === "number") {
-        filtered = filtered.filter(p => typeof p.price !== "number" || p.price <= activePriceMax);
-    }
+    currentPageCursor = null;
+    currentPageHasMore = true;
 
     const inp = document.getElementById("searchInput");
     const q = inp ? inp.value.toLowerCase().trim() : "";
-    if (q) filtered = filtered.filter(p => productMatchesSearch(p, q));
 
-    renderProducts(filtered);
+    const result = await window.voltFirebase.getProductsPage({
+        category: activeCategory,
+        maxPrice: typeof activePriceMax === "number" ? activePriceMax : null,
+        searchPrefix: q,
+        cursorDoc: null,
+        pageSize: 24
+    });
+
+    currentPageCursor = result.lastDoc;
+    currentPageHasMore = result.hasMore;
+
+    renderProducts(result.products);
+    saveProducts(result.products);
+}
+
+// FIX (pagination): تحميل الصفحة الجاية أثناء الـ scroll — بتضيف كروت
+// جديدة تحت الموجودين (appendProductCards)، متمسحش ولا تعيد رندر اللي
+// اتحمّل قبل كده. isLoadingNextPage بيمنع تحميل مزدوج لو العميل عمل
+// scroll سريع قبل ما الصفحة السابقة تخلص تحميل.
+async function loadNextProductsPage() {
+    if (isLoadingNextPage || !currentPageHasMore) return;
+    isLoadingNextPage = true;
+    showInfiniteScrollLoader(true);
+
+    const inp = document.getElementById("searchInput");
+    const q = inp ? inp.value.toLowerCase().trim() : "";
+
+    const result = await window.voltFirebase.getProductsPage({
+        category: activeCategory,
+        maxPrice: typeof activePriceMax === "number" ? activePriceMax : null,
+        searchPrefix: q,
+        cursorDoc: currentPageCursor,
+        pageSize: 24
+    });
+
+    currentPageCursor = result.lastDoc;
+    currentPageHasMore = result.hasMore;
+
+    appendProductCards(result.products);
+    saveProducts(result.products);
+
+    showInfiniteScrollLoader(false);
+    isLoadingNextPage = false;
 }
 
 function setupFilters() {
@@ -253,34 +407,35 @@ function setupFilters() {
     }));
 }
 
+// FIX (pagination): debounce 300ms على الكتابة — من غير كده كل حرف كان
+// هيبعت طلب شبكة منفصل لـ Firestore (كانت رخيصة قبل كده لأنها .filter()
+// محلي، دلوقتي بقت طلب شبكة حقيقي). ضغط زرار البحث أو Enter لسه فوري
+// (بيلغي أي تأخير معلّق وينفّذ على طول).
 function setupSearch() {
     const inp = document.getElementById("searchInput"), btn = document.getElementById("searchBtn");
+    let debounceTimer = null;
     const go = () => applyProductFilters();
-    btn?.addEventListener("click", go);
-    inp?.addEventListener("keyup", e => { if (e.key === "Enter") go(); });
-    inp?.addEventListener("input", go);
+    const debouncedGo = () => {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(go, 300);
+    };
+    btn?.addEventListener("click", () => { clearTimeout(debounceTimer); go(); });
+    inp?.addEventListener("keyup", e => { if (e.key === "Enter") { clearTimeout(debounceTimer); go(); } });
+    inp?.addEventListener("input", debouncedGo);
 }
 
-// سلايدر السعر — اختياري تماماً زي في filter.js: لو مفيش منتجات بسعر
-// رقمي، أو العنصر مش موجود في الصفحة، الفلترة بتتجاهل خالص من غير أي
-// تأثير على فلترة التصنيف/البحث. الحد الأقصى (max) بيتحسب من بيانات
-// المنتجات الحقيقية (مش رقم ثابت) عشان يفضل صحيح مهما الأدمن ضاف منتجات
-// بأي سعر.
+// سلايدر السعر — اختياري تماماً زي في filter.js.
+// FIX (pagination): كانت بتحسب الحد الأقصى ديناميكياً من getProducts()
+// (جلب كل المنتجات) — ده بالظبط عكس هدف الـ pagination. دلوقتي بتستخدم
+// max الثابت المعرّف فعلاً في index.html (max="1000") بدون أي جلب. ⚠️
+// تنازل واعي: لو أضفت منتج بسعر أعلى من 1000 مستقبلاً، لازم تعدّل
+// max="1000" في index.html يدوياً (سطر priceFilterSlider) — مش هيتحسب
+// تلقائياً بعد كده.
 async function setupPriceFilter() {
     const slider = document.getElementById("priceFilterSlider");
     const output = document.getElementById("priceFilterValue");
     if (!slider) return;
 
-    const allProds = await getProducts();
-    const prices = allProds.map(p => Number(p.price)).filter(n => !Number.isNaN(n));
-    const maxPrice = prices.length ? Math.max(...prices) : Number(slider.max) || 1000;
-
-    // تقريب لأعلى مضاعف لـ 10 عشان الـ step يفضل متسق، ونضيف هامش بسيط
-    // (10%) عشان أغلى منتج يفضل ظاهر لما السلايدر يكون في أقصى اليمين
-    // تماماً، مش مستبعد بسبب تقريب حسابي.
-    const roundedMax = Math.ceil((maxPrice * 1.1) / 10) * 10;
-    slider.max = String(roundedMax || 1000);
-    slider.value = slider.max;
     activePriceMax = Number(slider.value);
     if (output) output.textContent = slider.value;
 
@@ -288,13 +443,22 @@ async function setupPriceFilter() {
         activePriceMax = Number(slider.value);
         if (output) output.textContent = slider.value;
         applyProductFilters();
+        // === #27: micro-bounce on the output value, purely visual —
+        // does not affect activePriceMax or the filtering call above.
+        if (output && window.__volt && window.__volt.microAnimations && typeof window.__volt.microAnimations.pulseOnce === "function") {
+            window.__volt.microAnimations.pulseOnce(output, "volt-price-bump", 160);
+        }
     });
 }
 
 async function openProductModal(id) {
-    const allProds = await getProducts();
-    const p = allProds.find(x => String(x.id) === String(id)); if (!p) return;
-    const rows = p.specs ? Object.entries(p.specs).map(([k, v]) => `<div class="spec-row"><span>${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`).join('') : '';
+    // FIX (pagination): كانت بتجيب كل المنتجات وتدوّر بينهم بـ .find() —
+    // ده كان هيفشل بصمت (p يبقى undefined) لأي منتج مش موجود في الصفحة
+    // المحمّلة حالياً (24 منتج بس). getProductById بتجيب المنتج المطلوب
+    // مباشرة من Firestore بغض النظر عن أي صفحة هو فيها.
+    const p = await window.voltFirebase.getProductById(id);
+    if (!p) return;
+    const rows = p.specs ? Object.entries(p.specs).map(([k, v], idx) => `<div class="spec-row volt-spec-stagger" style="animation-delay:${idx * 60}ms"><span>${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`).join('') : '';
     const maxQty = (p.stock !== undefined && p.stock > 0) ? p.stock : 1;
     document.getElementById("productPageInnerContent").innerHTML = `
         <div class="modal-img">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" decoding="async" style="max-width:120px;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}</div>
@@ -349,7 +513,25 @@ function copyProductLink(id) {
     const url = `${location.origin}${location.pathname}#/product/${encodeURIComponent(id)}`;
     if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(url)
-            .then(() => showToast("✅ تم نسخ رابط المنتج", "green"))
+            .then(() => {
+                showToast("✅ تم نسخ رابط المنتج", "green");
+                // === #66: temporary text/style swap on the button itself,
+                // purely additive on top of the existing toast above — the
+                // toast still fires exactly as before, this is a second,
+                // separate confirmation on the button. Reverts automatically
+                // after 1.5s; does not touch the button's onclick or its
+                // underlying copy logic.
+                const shareBtn = document.querySelector(`[data-testid="modal-share-link-${id}"]`);
+                if (shareBtn) {
+                    const originalText = shareBtn.textContent;
+                    shareBtn.textContent = "✓ تم النسخ";
+                    shareBtn.classList.add("volt-copy-success");
+                    setTimeout(() => {
+                        shareBtn.textContent = originalText;
+                        shareBtn.classList.remove("volt-copy-success");
+                    }, 1500);
+                }
+            })
             .catch(() => showToast("⚠️ تعذر نسخ الرابط", "warn"));
     } else {
         showToast("⚠️ النسخ التلقائي غير مدعوم في هذا المتصفح", "warn");
@@ -378,6 +560,11 @@ function changeModalQty(id, delta, maxQty) {
     if (val < 1) val = 1;
     if (val > maxQty) val = maxQty;
     el.textContent = val;
+    // === #47: micro-bounce, purely visual, reuses the same pulseOnce
+    // helper already used elsewhere in this file for #27 above.
+    if (window.__volt && window.__volt.microAnimations && typeof window.__volt.microAnimations.pulseOnce === "function") {
+        window.__volt.microAnimations.pulseOnce(el, "volt-qty-bump", 160);
+    }
 }
 
 // الفعل النهائي لزرار "Add item" جوه صفحة المنتج: يضيف المنتج للسلة بالكمية المختارة فعليًا، ثم يرجع للمتجر
@@ -410,10 +597,15 @@ async function deleteProduct(event, id) {
         if (window.voltFirebase && typeof window.voltFirebase.deleteProduct === "function") {
             try { await window.voltFirebase.deleteProduct(sid); } catch (err) { console.warn("deleteProduct: فشل الحذف من Firestore", err); }
         }
-        let prods = await getProducts();
-        prods = prods.filter(p => String(p.id) !== sid);
-        saveProducts(prods);
-        await applyProductFilters();
+        // FIX (pagination): استبدلت جلب كل المنتجات + applyProductFilters()
+        // الكاملة (اللي كانت هتصفّر حالة الـ pagination وترجّع أي عميل
+        // نازل في الـ scroll لأول صفحة) بإزالة مستهدفة: نحذف الـ id من
+        // الكاش المحلي التراكمي، ونشيل الكارت من الشاشة مباشرة لو ظاهر.
+        try {
+            const cached = JSON.parse(localStorage.getItem("volt_products")) || [];
+            localStorage.setItem("volt_products", JSON.stringify(cached.filter(p => String(p.id) !== sid)));
+        } catch (e) { console.warn("deleteProduct: فشل تحديث الكاش المحلي", e); }
+        document.querySelector(`[data-id="${sid}"]`)?.remove();
         if (typeof window.renderPublicFolders === "function") window.renderPublicFolders();
         showToast("تم حذف المنتج بنجاح ✓", "warn");
     }
@@ -451,7 +643,6 @@ async function submitNewProduct() {
         return;
     }
 
-    const prods = await getProducts();
     const newProd = {
         name,
         category,
@@ -459,7 +650,11 @@ async function submitNewProduct() {
         price,
         stock,
         desc,
-        specs: { "الحالة": "جديد" }
+        specs: { "الحالة": "جديد" },
+        // === #20: new field, additive only — does not affect any existing
+        // key above. Used purely by renderProducts() to compute whether a
+        // product is within its first 3 days for the "جديد" badge/scan.
+        createdAt: new Date().toISOString()
     };
 
     if (window.voltFirebase && typeof window.voltFirebase.addProduct === "function") {
@@ -473,9 +668,15 @@ async function submitNewProduct() {
         newProd.id = String(Date.now());
     }
 
-    prods.push(newProd);
-    saveProducts(prods);
-    renderProducts(prods);
+    // FIX (pagination): مبقيناش محتاجين نجيب كل المنتجات بس عشان نضيف
+    // واحد جديد — saveProducts([newProd]) تراكمية (union بالـ id، شوف
+    // تعريفها فوق)، فبتضيف المنتج الجديد للكاش من غير ما تلمس الباقي.
+    // renderProducts(prods) القديمة كانت بترندر كل المنتجات بغض النظر عن
+    // الفلتر النشط حالياً — استبدلناها بـ applyProductFilters() اللي
+    // بترجع الصفحة الأولى محترمة الفلتر الفعلي (المنتج الجديد هيظهر لو
+    // مطابق للفلتر، أو مش هيظهر لو الفلتر الحالي بيستبعده — وده صحيح).
+    saveProducts([newProd]);
+    await applyProductFilters();
 
     // إغلاق المودال وتنظيف المدخلات
     document.getElementById('add-product-modal').classList.remove('open');
@@ -509,12 +710,10 @@ async function addToCart(event, id) {
         showToast("حساب الإدارة لا يمكنه الشراء", "warn");
         return;
     }
-    let prods = await getProducts();
-    const pIndex = prods.findIndex(x => String(x.id) === String(id));
-    if (pIndex === -1) return;
-
-
-    const p = prods[pIndex];
+    // FIX (pagination): كانت بتجيب كل المنتجات وتدوّر فيهم بـ findIndex —
+    // بديل مباشر ورخيص: نجيب المنتج المطلوب بس من Firestore.
+    const p = await window.voltFirebase.getProductById(id);
+    if (!p) return;
 
     if (p.stock !== undefined && p.stock <= 0) {
         showToast("عذراً، نفدت كمية هذا المنتج!", "warn"); return;
@@ -522,8 +721,19 @@ async function addToCart(event, id) {
 
     if (p.stock !== undefined) {
         p.stock--;
-        saveProducts(prods);
-        await applyProductFilters();
+        // FIX (pagination): كانت بتنادي applyProductFilters() الكاملة هنا
+        // بعد كل عملية إضافة — ده كان هيصفّر حالة الـ pagination بالكامل
+        // مع كل ضغطة "+" (العميل نازل في scroll يترجّع لأول صفحة فجأة).
+        // بدل كده، تحديث الكاش تراكمياً بس (saveProducts([p]) — union، مش
+        // استبدال، شوف تعريفها فوق)، وتحديث بصري خفيف للكارت ده لو ظاهر
+        // على الشاشة دلوقتي، من غير أي إعادة رندر لباقي الصفحة.
+        saveProducts([p]);
+        if (p.stock <= 0) {
+            const fabBtn = document.querySelector(`[data-id="${p.id}"] .fab-add`);
+            if (fabBtn) {
+                fabBtn.outerHTML = `<button class="fab-add fab-add--disabled" disabled>×</button>`;
+            }
+        }
         if (window.voltFirebase && typeof window.voltFirebase.updateProduct === "function") {
             try { window.voltFirebase.updateProduct(String(p.id), { stock: p.stock }); } catch (err) { console.warn("addToCart: فشل تحديث المخزون", err); }
         }
@@ -545,7 +755,7 @@ async function addToCart(event, id) {
             btn.style.color = "#FF7A00";
         }, 1500);
     }
-    const product = cart.find(p => p.id === id);
+    const product = cart.find(cp => String(cp.id) === String(id));
     if (product) {
         trackAddToCart(product);
         trackMetaAddToCart(product);
@@ -560,15 +770,41 @@ async function addToCart(event, id) {
 
 
 async function removeFromCart(i) {
+    // === #26: play a leave animation on the specific .cart-item element
+    // BEFORE the state mutation below runs, then wait for it, so the
+    // final cart[]/localStorage/DOM state after this function returns is
+    // identical to before this change — only the visual removal is no
+    // longer instantaneous. Falls back to zero delay if the element can't
+    // be found or prefers-reduced-motion is set, matching every other
+    // reduced-motion guard already used elsewhere in this codebase.
+    const reduceMotionCheck = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const removeBtn = document.querySelector(`[data-testid="cart-item-remove-${i}"]`);
+    const itemEl = removeBtn ? removeBtn.closest(".cart-item") : null;
+    if (itemEl && !reduceMotionCheck) {
+        itemEl.classList.add("volt-cart-item-leaving");
+        await new Promise(resolve => setTimeout(resolve, 280));
+    }
+
     const p = cart[i];
-    let prods = await getProducts();
-    const pIndex = prods.findIndex(x => String(x.id) === String(p.id));
-    if (pIndex !== -1) {
-        prods[pIndex].stock = (prods[pIndex].stock || 0) + 1;
-        saveProducts(prods);
-        await applyProductFilters();
+    // FIX (pagination): كانت بتجيب كل المنتجات وتدوّر فيهم بـ findIndex —
+    // بديل مباشر: نجيب المنتج المطلوب بس من Firestore.
+    const freshProduct = await window.voltFirebase.getProductById(p.id);
+    if (freshProduct) {
+        const newStock = (freshProduct.stock || 0) + 1;
+        const updatedProduct = { ...freshProduct, stock: newStock };
+        // FIX (pagination): applyProductFilters() الكاملة كانت هتصفّر
+        // الـ pagination مع كل عملية إزالة من السلة — نفس السبب زي
+        // addToCart فوق. بدل كده: تحديث الكاش تراكمياً، وتحديث بصري خفيف
+        // لزرار "+" لو المنتج كان متعطّل بسبب نفاد المخزون ورجع متاح.
+        saveProducts([updatedProduct]);
         if (window.voltFirebase && typeof window.voltFirebase.updateProduct === "function") {
-            try { window.voltFirebase.updateProduct(String(prods[pIndex].id), { stock: prods[pIndex].stock }); } catch (err) { console.warn("removeFromCart: فشل تحديث المخزون", err); }
+            try { window.voltFirebase.updateProduct(String(freshProduct.id), { stock: newStock }); } catch (err) { console.warn("removeFromCart: فشل تحديث المخزون", err); }
+        }
+        if (newStock > 0) {
+            const disabledBtn = document.querySelector(`[data-id="${freshProduct.id}"] .fab-add--disabled`);
+            if (disabledBtn) {
+                disabledBtn.outerHTML = `<button class="fab-add fab-add--active" id="btn-add-${freshProduct.id}" data-testid="product-add-btn-${freshProduct.id}" onclick="event.stopPropagation(); openProductModal('${freshProduct.id}');" title="عرض المنتج والإضافة للسلة">+</button>`;
+            }
         }
     }
     cart.splice(i, 1);
@@ -594,7 +830,7 @@ async function updateCartUI() {
     if (!cart.length) {
     c.innerHTML = `
         <div style="text-align:center;padding:20px 0;">
-            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);margin-bottom:10px;" aria-hidden="true">
+            <svg class="volt-cart-idle" width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="color:var(--muted);margin-bottom:10px;" aria-hidden="true">
                 <path d="M3 4h2l2.4 12.2a2 2 0 0 0 2 1.6h7.2a2 2 0 0 0 2-1.6L21 8H6.2"/>
                 <circle cx="10" cy="20" r="1.4" fill="var(--green)" stroke="none"/>
                 <circle cx="17" cy="20" r="1.4" fill="var(--green)" stroke="none"/>
@@ -665,7 +901,20 @@ async function updateCartUI() {
 
     if (discountAmount > 0) {
         const finalTotal = Math.max(0, total - discountAmount);
-        t.innerHTML = `<span style="font-size:14px; color:#ff4444; text-decoration:line-through; margin-left:10px;">${total}</span> ${finalTotal} <span>EGP</span>`;
+        // === #35: the numbers/calculation above (finalTotal, total,
+        // discountAmount) are completely unchanged. Only the strike mark's
+        // arrival is now a width sweep instead of appearing instantly —
+        // volt-strike-price suppresses the inline line-through and draws
+        // it via the ::after rule in volt-micro-animations.css instead,
+        // which starts at width:0 and only reaches width:100% once
+        // volt-strike-active is added a frame later below.
+        t.innerHTML = `<span class="volt-strike-price" style="font-size:14px; color:#ff4444; margin-left:10px;">${total}</span> ${finalTotal} <span>EGP</span>`;
+        const strikeEl = t.querySelector(".volt-strike-price");
+        if (strikeEl) {
+            requestAnimationFrame(() => {
+                strikeEl.classList.add("volt-strike-active");
+            });
+        }
     }
 }
 
@@ -782,7 +1031,12 @@ async function doLogin() {
         updateNavForUser();
 
         if (currentUser.role === "admin") {
-            renderProducts(await getProducts());
+            // FIX (pagination): كانت بتجيب كل المنتجات وترندرهم دفعة واحدة
+            // عشان زرار الحذف يظهر — applyProductFilters() بترجع الصفحة
+            // الأولى بس بالفلتر الحالي، وزرار الحذف بيظهر تلقائياً لأن
+            // buildProductCardHTML() بتقرأ currentUser.role وقت الرندر
+            // (اللي بقى "admin" دلوقتي فعلاً بعد السطر فوق مباشرة).
+            await applyProductFilters();
             showToast("🛡️ مرحباً بك يا أدمن! تم الدخول للوحة التحكم الكاملة", "green");
         } else {
             showToast(`أهلاً بعودتك يا ${currentUser.name || "عميلنا"}! 🎉`, "green");
@@ -1131,7 +1385,19 @@ function updateWizardProgress() {
         const s = i + 1; el.classList.remove("active", "done");
         if (s < wizStep) el.classList.add("done"); else if (s === wizStep) el.classList.add("active");
     });
-    document.querySelectorAll(".wp-line").forEach((el, i) => { el.classList.toggle("done", i + 1 < wizStep); });
+    document.querySelectorAll(".wp-line").forEach((el, i) => {
+        const wasAlreadyDone = el.classList.contains("done");
+        const shouldBeDone = i + 1 < wizStep;
+        el.classList.toggle("done", shouldBeDone);
+        // === #24: fire the sweep only on the transition INTO done, not on
+        // every call (this function runs on every wizNext()/wizBack()) and
+        // not on lines that were already done before this call.
+        if (shouldBeDone && !wasAlreadyDone) {
+            el.classList.remove("volt-line-sweep");
+            void el.offsetWidth;
+            el.classList.add("volt-line-sweep");
+        }
+    });
 }
 /* ==========================================================================
    NAV CONFIGURATIONS & ADMIN PANEL TRIGGER
@@ -1182,7 +1448,10 @@ async function logout() {
         window.__voltClearPromoOnLogout();
     }
     updateNavForUser();
-    renderProducts(await getProducts()); // إعادة الرندر لإخفاء أدوات الأدمن
+    // FIX (pagination): نفس مبدأ doLogin أعلاه — applyProductFilters()
+    // بترجع الصفحة الأولى بالفلتر الحالي، وأدوات الأدمن (زرار الحذف)
+    // بتختفي تلقائياً لأن currentUser بقى null دلوقتي.
+    await applyProductFilters(); // إعادة الرندر لإخفاء أدوات الأدمن
     showToast("تم تسجيل الخروج بنجاح", "warn");
 }
 
@@ -1330,7 +1599,7 @@ function choosePayment(method) {
             <p style="color:var(--muted); font-size:13px; margin-bottom:20px; line-height:1.6;">
                 قيمة طلبك تتخطى 1000 ج.م. لتأكيد الطلب، يجب دفع عربون <b>30%</b> بقيمة <strong style="color:var(--green); font-size:16px;">${deposit} ج.م</strong> عبر InstaPay أولاً.
             </p>
-            <div style="background:#0e140e; border:1px dashed var(--amber); padding:15px; border-radius:10px; margin-bottom:20px;">
+            <div class="volt-deposit-shake" style="background:#0e140e; border:1px dashed var(--amber); padding:15px; border-radius:10px; margin-bottom:20px;">
                 <span style="display:block; color:var(--muted); font-size:12px; margin-bottom:5px;">رقم التحويل (InstaPay):</span>
                 <strong style="color:#fff; font-size:20px; letter-spacing:2px;">01108199917</strong>
             </div>
@@ -1636,27 +1905,27 @@ async function renderAdminDashboardKPIs() {
         <h4 style="color:var(--amber); margin-bottom:16px; font-family:'Rajdhani',sans-serif; font-size:18px; letter-spacing:0.5px;">⚡ المؤشرات السريعة</h4>
         <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; margin-bottom:28px;">
             <div style="background:var(--card-bg); border:1px solid var(--green); border-radius:10px; padding:16px 14px; text-align:center;">
-                <div style="font-size:24px; font-weight:700; color:var(--green); font-family:'Rajdhani',sans-serif; line-height:1.1;">${totalRevenue.toLocaleString()}</div>
+                <div id="volt-kpi-revenue" style="font-size:24px; font-weight:700; color:var(--green); font-family:'Rajdhani',sans-serif; line-height:1.1;">0</div>
                 <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">💰 إجمالي المبيعات (EGP)</div>
             </div>
             <div style="background:var(--card-bg); border:1px solid var(--amber); border-radius:10px; padding:16px 14px; text-align:center;">
-                <div style="font-size:24px; font-weight:700; color:var(--amber); font-family:'Rajdhani',sans-serif; line-height:1.1;">${totalOrders}</div>
+                <div id="volt-kpi-orders" style="font-size:24px; font-weight:700; color:var(--amber); font-family:'Rajdhani',sans-serif; line-height:1.1;">0</div>
                 <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">📦 عدد الطلبات</div>
             </div>
             <div style="background:var(--card-bg); border:1px solid #4a90e2; border-radius:10px; padding:16px 14px; text-align:center;">
-                <div style="font-size:24px; font-weight:700; color:#4a90e2; font-family:'Rajdhani',sans-serif; line-height:1.1;">${totalCustomers}</div>
+                <div id="volt-kpi-customers" style="font-size:24px; font-weight:700; color:#4a90e2; font-family:'Rajdhani',sans-serif; line-height:1.1;">0</div>
                 <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">👥 عدد العملاء</div>
             </div>
             <div style="background:var(--card-bg); border:1px solid var(--green); border-radius:10px; padding:16px 14px; text-align:center;">
-                <div style="font-size:24px; font-weight:700; color:var(--green); font-family:'Rajdhani',sans-serif; line-height:1.1;">${todayRevenue.toLocaleString()}</div>
+                <div id="volt-kpi-today" style="font-size:24px; font-weight:700; color:var(--green); font-family:'Rajdhani',sans-serif; line-height:1.1;">0</div>
                 <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">☀️ أرباح اليوم (EGP)</div>
             </div>
             <div style="background:var(--card-bg); border:1px solid var(--amber); border-radius:10px; padding:16px 14px; text-align:center;">
-                <div style="font-size:24px; font-weight:700; color:var(--amber); font-family:'Rajdhani',sans-serif; line-height:1.1;">${monthRevenue.toLocaleString()}</div>
+                <div id="volt-kpi-month" style="font-size:24px; font-weight:700; color:var(--amber); font-family:'Rajdhani',sans-serif; line-height:1.1;">0</div>
                 <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">📅 أرباح الشهر (EGP)</div>
             </div>
             <div style="background:var(--card-bg); border:1px solid var(--red); border-radius:10px; padding:16px 14px; text-align:center;">
-                <div style="font-size:24px; font-weight:700; color:var(--red); font-family:'Rajdhani',sans-serif; line-height:1.1;">${lowStock.length}</div>
+                <div id="volt-kpi-lowstock" style="font-size:24px; font-weight:700; color:var(--red); font-family:'Rajdhani',sans-serif; line-height:1.1;">0</div>
                 <div style="font-size:11px; color:var(--muted); margin-top:6px; letter-spacing:0.3px;">⚠️ منتجات قليلة المخزون</div>
             </div>
         </div>
@@ -1732,6 +2001,54 @@ async function renderAdminDashboardKPIs() {
         </div>
  
     </div>`;
+
+    // === #37: count-up animation for the six KPI numbers above. Every
+    // target value here (totalRevenue, totalOrders, totalCustomers,
+    // todayRevenue, monthRevenue, lowStock.length) is the exact SAME
+    // already-computed variable used in the innerHTML above — this only
+    // animates how each number arrives, never changes what the final
+    // displayed number is.
+    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        const voltKpiTargets = [
+            ["volt-kpi-revenue", totalRevenue, true],
+            ["volt-kpi-orders", totalOrders, false],
+            ["volt-kpi-customers", totalCustomers, false],
+            ["volt-kpi-today", todayRevenue, true],
+            ["volt-kpi-month", monthRevenue, true],
+            ["volt-kpi-lowstock", lowStock.length, false]
+        ];
+        voltKpiTargets.forEach(([elId, target, useLocale]) => {
+            const el = document.getElementById(elId);
+            if (!el) return;
+            const duration = 500;
+            const startTime = performance.now();
+            function step(now) {
+                const progress = Math.min(1, (now - startTime) / duration);
+                const current = Math.floor(target * progress);
+                el.textContent = useLocale ? current.toLocaleString() : String(current);
+                if (progress < 1) {
+                    requestAnimationFrame(step);
+                } else {
+                    el.textContent = useLocale ? target.toLocaleString() : String(target);
+                }
+            }
+            requestAnimationFrame(step);
+        });
+    } else {
+        // Reduced-motion: write final values directly, no animation frame loop.
+        const voltKpiFinal = [
+            ["volt-kpi-revenue", totalRevenue.toLocaleString()],
+            ["volt-kpi-orders", String(totalOrders)],
+            ["volt-kpi-customers", String(totalCustomers)],
+            ["volt-kpi-today", todayRevenue.toLocaleString()],
+            ["volt-kpi-month", monthRevenue.toLocaleString()],
+            ["volt-kpi-lowstock", String(lowStock.length)]
+        ];
+        voltKpiFinal.forEach(([elId, text]) => {
+            const el = document.getElementById(elId);
+            if (el) el.textContent = text;
+        });
+    }
 }
 // 1. عرض وإدارة كافة الأوردرات في الموقع للأدمن
 async function renderAdminOrders() {
@@ -1860,7 +2177,7 @@ async function renderAdminUsers() {
                             <td style="padding:13px 14px; font-family:sans-serif; color:var(--muted); direction:ltr; text-align:right;">${escapeHtml(u.idNum || '—')}</td>
                             <td style="padding:13px 14px; color:var(--muted); max-width:200px; white-space:normal; word-wrap:break-word; line-height:1.5;">${escapeHtml(u.address || '—')}</td>
                             <td style="padding:13px 14px; text-align:center;">
-                                <button data-testid="delete-user-${escapeHtml(u.uid || u.id || '')}" data-uid="${escapeHtml(u.uid || u.id || '')}" data-name="${escapeHtml(u.name || 'العميل')}" onclick="deleteUserAccount(this.dataset.uid, this.dataset.name)"
+                                <button data-testid="delete-user-${escapeHtml(u.uid || u.id || '')}" data-uid="${escapeHtml(u.uid || u.id || '')}" data-name="${escapeHtml(u.name || 'العميل')}" onmousedown="this.classList.add('volt-confirm-armed')" onmouseup="this.classList.remove('volt-confirm-armed')" onmouseleave="this.classList.remove('volt-confirm-armed')" onclick="deleteUserAccount(this.dataset.uid, this.dataset.name)"
                                     style="background:#441111; color:var(--red); border:1px solid var(--red); padding:5px 10px; border-radius:4px; cursor:pointer; font-size:12px;">🗑️ حذف الحساب</button>
                             </td>
                         </tr>
@@ -2327,7 +2644,7 @@ window.renderPromoTable = function () {
             <td style="padding:12px; color:#aaa;">${escapeHtml(c.type)}</td>
             <td style="padding:12px; color:#1db954; font-weight:bold;">${escapeHtml(codeValue)}</td>
             <td style="padding:12px; color:#aaa;">${minOrder}</td>
-            <td style="padding:12px; color:${statusColor}; font-weight:bold;">${statusText}</td>
+            <td style="padding:12px; color:${statusColor}; font-weight:bold;"><span class="volt-status-dot ${isActive ? 'volt-status-active' : 'volt-status-inactive'}"></span>${statusText}</td>
             <td style="padding:12px; text-align:center; display:flex; gap:6px; justify-content:center;">
                 <button onclick="togglePromoStatus('${escapeHtml(c.code)}')" 
                     style="background:${toggleColor}; color:white; border:none; padding:5px 10px; border-radius:5px; cursor:pointer; font-weight:bold; font-family:'Cairo',sans-serif;">

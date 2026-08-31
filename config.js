@@ -32,7 +32,9 @@ import {
     getDoc,
     query,
     where,
-    limit
+    limit,
+    orderBy,
+    startAfter
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 // 🆕 استدعاء خدمة تسجيل الدخول (Authentication)
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
@@ -65,6 +67,9 @@ window.dispatchEvent(new Event('voltFirebaseReady'));
 // ==========================================================================
 
 // جلب كل المنتجات من Firestore
+// ⚠️ فضلت زي ما هي بدون أي تعديل — renderAdminProducts() في index.html
+// وverifyOrderPricing() في order-verify.js لسه محتاجين الجلب الكامل ده.
+// الدوال الجديدة تحت (getProductsPageFromFirestore إلخ) جنبها، مش بدالها.
 async function getProductsFromFirestore() {
     try {
         const snapshot = await getDocs(collection(db, "products"));
@@ -79,10 +84,151 @@ async function getProductsFromFirestore() {
     }
 }
 
+// ==========================================================================
+// 🆕 جلب صفحة منتجات (Pagination) — للعرض الرئيسي للعميل فقط.
+// ==========================================================================
+//
+// البحث هنا بيدور في "بداية اسم المنتج" فقط (عن طريق حقل searchName
+// المحسوب تلقائياً في addProductToFirestore/updateProductInFirestore فوق).
+// قرار متعمّد: Firestore مش بيعمل full-text search حر، وده البديل
+// المجاني والبسيط بدل خدمة خارجية زي Algolia.
+//
+// @param {Object} options
+// @param {string} options.category      - "all" أو اسم تصنيف
+// @param {number|null} options.maxPrice - الحد الأقصى للسعر، أو null
+// @param {string} options.searchPrefix  - بداية الاسم (lowercase)، أو ""
+// @param {Object|null} options.cursorDoc - آخر document من الصفحة السابقة
+// @param {number} options.pageSize      - افتراضي 24
+//
+// @returns {{products: Array, lastDoc: Object|null, hasMore: boolean}}
+async function getProductsPageFromFirestore(options = {}) {
+    const {
+        category = "all",
+        maxPrice = null,
+        searchPrefix = "",
+        cursorDoc = null,
+        pageSize = 24
+    } = options;
+
+    try {
+        const constraints = [];
+
+        if (category && category !== "all") {
+            constraints.push(where("category", "==", category));
+        }
+
+        // ⚠️ قيد Firestore: range query (>=, <=) على حقلين مختلفين في نفس
+        // الـ query مش مسموح. لو فيه بحث نصي، الـ orderBy لازم يكون على
+        // searchName نفسه (نفس الحقل اللي عليه الـ range).
+        if (searchPrefix) {
+            constraints.push(where("searchName", ">=", searchPrefix));
+            constraints.push(where("searchName", "<=", searchPrefix + "\uf8ff"));
+            constraints.push(orderBy("searchName"));
+        } else {
+            constraints.push(orderBy("name"));
+        }
+
+        // فلتر السعر: لو بحث نصي + سعر مع بعض، مينفعش الاتنين range
+        // constraints على حقلين مختلفين في نفس الـ query. في الحالة دي
+        // بس، فلترة السعر بتتطبق في الذاكرة بعد الجلب (ممكن ترجع أقل
+        // من pageSize نتيجة في الحالة الخاصة دي تحديداً).
+        const priceFilterInMemory = !!(searchPrefix && maxPrice !== null);
+        if (maxPrice !== null && !priceFilterInMemory) {
+            constraints.push(where("price", "<=", maxPrice));
+        }
+
+        if (cursorDoc) {
+            constraints.push(startAfter(cursorDoc));
+        }
+
+        // نجيب pageSize + 1 عشان نعرف هل فيه صفحة بعد كده من غير query إضافي
+        constraints.push(limit(pageSize + 1));
+
+        const q = query(collection(db, "products"), ...constraints);
+        const snapshot = await getDocs(q);
+
+        let docs = snapshot.docs;
+        const hasMore = docs.length > pageSize;
+        if (hasMore) docs = docs.slice(0, pageSize);
+
+        let products = docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+
+        if (priceFilterInMemory) {
+            products = products.filter(p => typeof p.price !== "number" || p.price <= maxPrice);
+        }
+
+        const lastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
+        return { products, lastDoc, hasMore };
+
+    } catch (err) {
+        // أشهر سبب: composite index مش موجود لسه — الـ error في الـ console
+        // بيدّيك رابط مباشر تعمل بيه create. لازم firestore.indexes.json
+        // يتعمله deploy قبل ما ده يشتغل فعلياً.
+        console.error("getProductsPageFromFirestore: فشل جلب صفحة المنتجات", err);
+        return { products: [], lastDoc: null, hasMore: false };
+    }
+}
+
+// ==========================================================================
+// 🆕 جلب منتج واحد بالـ id مباشرة — بديل عن "جيب الكل ودوّر فيهم"
+// المستخدم في openProductModal / addToCart / removeFromCart / deleteProduct
+// ==========================================================================
+async function getProductByIdFromFirestore(productId) {
+    try {
+        const docSnap = await getDoc(doc(db, "products", String(productId)));
+        if (!docSnap.exists()) return null;
+        return { id: docSnap.id, ...docSnap.data() };
+    } catch (err) {
+        console.error("getProductByIdFromFirestore: فشل جلب المنتج", productId, err);
+        return null;
+    }
+}
+
+// ==========================================================================
+// 🔍 فحص بنية الداتا مرة واحدة عند الاستدعاء — بيوريك في الـ console أي
+// منتج قديم مش متوافق مع البنية الجديدة (بدون searchName، أو price مش
+// Number، أو category فاضي)، من غير ما يوقف تشغيل الموقع.
+// ==========================================================================
+async function validateProductSchemaOnce() {
+    try {
+        const snapshot = await getDocs(query(collection(db, "products"), limit(500)));
+        const issues = { missingSearchName: [], priceNotNumber: [], missingCategory: [] };
+
+        snapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const id = docSnap.id;
+            const name = data.name || "(بدون اسم)";
+            if (!data.searchName) issues.missingSearchName.push({ id, name });
+            if (typeof data.price !== "number") issues.priceNotNumber.push({ id, name, actualValue: data.price });
+            if (!data.category) issues.missingCategory.push({ id, name });
+        });
+
+        const total = issues.missingSearchName.length + issues.priceNotNumber.length + issues.missingCategory.length;
+        if (total === 0) {
+            console.log("✅ validateProductSchemaOnce: كل المنتجات متوافقة");
+        } else {
+            console.warn(`⚠️ validateProductSchemaOnce: ${total} مشكلة — دي مش هتظهر صح في البحث/الفلترة الجديدة:`);
+            if (issues.missingSearchName.length) console.warn(`  🔸 بدون searchName (مش هيظهروا في البحث):`, issues.missingSearchName);
+            if (issues.priceNotNumber.length) console.warn(`  🔸 سعر مش رقم (مش هيظهروا في فلتر السعر):`, issues.priceNotNumber);
+            if (issues.missingCategory.length) console.warn(`  🔸 بدون تصنيف:`, issues.missingCategory);
+        }
+        return issues;
+    } catch (err) {
+        console.error("validateProductSchemaOnce: فشل الفحص", err);
+        return null;
+    }
+}
+
 // إضافة منتج جديد (معرف تلقائي من Firestore)
 async function addProductToFirestore(productData) {
     try {
-        const docRef = await addDoc(collection(db, "products"), productData);
+        // 🆕 حساب searchName تلقائياً من الاسم - lowercase، بدون مسافات
+        // زيادة - يُستخدم في getProductsPageFromFirestore للبحث ببداية الاسم
+        const dataWithSearchName = {
+            ...productData,
+            searchName: (productData.name || "").toLowerCase().trim()
+        };
+        const docRef = await addDoc(collection(db, "products"), dataWithSearchName);
         return docRef.id;
     } catch (err) {
         console.error("addProductToFirestore: فشل إضافة المنتج", err);
@@ -93,7 +239,13 @@ async function addProductToFirestore(productData) {
 // تعديل منتج موجود (بمعرفه)
 async function updateProductInFirestore(productId, updatedFields) {
     try {
-        await updateDoc(doc(db, "products", productId), updatedFields);
+        // 🆕 لو الاسم اتغيّر، searchName لازم يتحدّث معاه وإلا هيفضل
+        // بيدل على الاسم القديم في نتائج البحث بينما المعروض هو الجديد
+        const fieldsToUpdate = { ...updatedFields };
+        if (updatedFields.name !== undefined) {
+            fieldsToUpdate.searchName = updatedFields.name.toLowerCase().trim();
+        }
+        await updateDoc(doc(db, "products", productId), fieldsToUpdate);
         return true;
     } catch (err) {
         console.error("updateProductInFirestore: فشل تعديل المنتج", err);
@@ -117,6 +269,10 @@ window.voltFirebase.getProducts = getProductsFromFirestore;
 window.voltFirebase.addProduct = addProductToFirestore;
 window.voltFirebase.updateProduct = updateProductInFirestore;
 window.voltFirebase.deleteProduct = deleteProductFromFirestore;
+// 🆕 Pagination — جنب getProducts القديمة، مش بدالها
+window.voltFirebase.getProductsPage = getProductsPageFromFirestore;
+window.voltFirebase.getProductById = getProductByIdFromFirestore;
+window.voltFirebase.validateProductSchema = validateProductSchemaOnce;
 
 // ==========================================================================
 // دوال المستخدمين والأوردرات — Firestore

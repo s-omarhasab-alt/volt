@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- Security (meta equivalents — GitHub Pages: no custom response headers; X-Frame-Options N/A) -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self' https://wa.me; object-src 'none'; frame-src 'none'; script-src 'self' https://apis.google.com https://www.gstatic.com https://www.googletagmanager.com https://connect.facebook.net 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebase.googleapis.com https://volt-store-67593.firebaseapp.com https://www.google-analytics.com https://region1.google-analytics.com https://connect.facebook.net; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self' https://wa.me; object-src 'none'; frame-src 'none'; script-src 'self' https://www.gstatic.com https://www.googletagmanager.com https://connect.facebook.net 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebase.googleapis.com https://volt-store-67593.firebaseapp.com https://www.google-analytics.com https://region1.google-analytics.com https://connect.facebook.net; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
     <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=(), payment=()">
@@ -612,7 +612,8 @@
                 placeholder="ملاحظاتك على الطلب أو لو محتاج منتج مش موجود..."
                 style="width:100%; margin-top:16px; padding:12px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:8px; font-family:'Cairo',sans-serif; outline:none; resize:vertical; min-height:80px;"
                 onfocus="this.style.borderColor='var(--green)'"
-                onblur="this.style.borderColor='var(--border)'"></textarea>
+                onblur="this.style.borderColor='var(--border)'"
+                oninput="this.classList.add('volt-typing-glow'); clearTimeout(this._voltTypingTimer); this._voltTypingTimer=setTimeout(()=>this.classList.remove('volt-typing-glow'),400);"></textarea>
             <div
                 style="margin-top:24px;border-top:1px solid var(--border);padding-top:18px;display:flex;justify-content:space-between;align-items:center;direction:rtl;">
                 <span style="font-weight:700;font-size:16px;">الإجمالي الكلي:</span>
@@ -1227,7 +1228,7 @@ function frame() {
             }
 
             showToast("✅ تم تزويد الكمية بنجاح! المنتج رجع متاح للبيع.", "green");
-            renderProducts(products);
+            await applyProductFilters();
             await renderAdminProducts();
         }
     </script>

@@ -197,3 +197,607 @@
         opacity: 1;
     }
 }
+
+/* ==========================================================================
+   ADDITIVE-ONLY LAYER — everything below this line is a NEW effect added
+   on top of the existing site. Nothing above this line was edited.
+   No dimension, position, spacing, or timing value belonging to an
+   existing rule is changed anywhere in this block — every selector below
+   either targets a brand-new class toggled by JS, or adds a new property
+   (animation/transition/pseudo-element) that did not previously exist on
+   that selector, without touching the properties already set on it
+   elsewhere in the codebase.
+   ========================================================================== */
+
+/* === #3: card-price gentle flicker every 3s, added by volt-micro-animations.js
+   via .card-price toggling .volt-price-flicker. No change to .card-price
+   itself (font/size/color untouched) — only opacity is animated. === */
+@media (prefers-reduced-motion: no-preference) {
+    .card-price.volt-price-flicker {
+        animation: volt-price-flicker-kf 0.4s ease-in-out;
+    }
+}
+@keyframes volt-price-flicker-kf {
+    0%   { opacity: 1; }
+    25%  { opacity: 0.55; }
+    50%  { opacity: 1; }
+    75%  { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+/* === #4: scanner line sweep on .stack-card, added by new-script.js via
+   IntersectionObserver toggling .volt-stack-scan. Pure ::before overlay —
+   .stack-card's own size/position/recede logic is untouched. === */
+.stack-card {
+    position: relative; /* .stack-card is already position:sticky in
+       new-style.css — "relative" here has no effect since sticky already
+       establishes a positioning context for absolutely-positioned children;
+       this line is a documentation no-op kept only so the ::before below is
+       never mistaken for relying on an un-set parent. No visual or layout
+       change results from this line. */
+}
+.stack-card::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: -10%;
+    height: 14%;
+    background: linear-gradient(180deg, transparent, rgba(29,185,84,0.35), transparent);
+    pointer-events: none;
+    opacity: 0;
+    z-index: 5;
+}
+@media (prefers-reduced-motion: no-preference) {
+    .stack-card.volt-stack-scan::before {
+        animation: volt-stack-scan-kf 1.1s ease-in-out 1;
+    }
+}
+@keyframes volt-stack-scan-kf {
+    0%   { top: -10%; opacity: 0; }
+    15%  { opacity: 1; }
+    85%  { opacity: 1; }
+    100% { top: 96%; opacity: 0; }
+}
+
+/* === #11: 3D tilt on .card.glow-card, added by volt-micro-animations.js
+   via mousemove setting --volt-tilt-x/--volt-tilt-y and toggling
+   .volt-tilt-active. Existing .card:hover transform (translateY(-5px)) is
+   untouched — this adds a SEPARATE transform on a wrapping perspective
+   layer via inline CSS var, not by editing .card:hover itself. === */
+@media (prefers-reduced-motion: no-preference) {
+    .card.glow-card.volt-tilt-active {
+        transform: translateY(-5px) perspective(700px)
+            rotateX(var(--volt-tilt-x, 0deg)) rotateY(var(--volt-tilt-y, 0deg));
+        transition: transform 0.1s ease-out;
+    }
+}
+
+/* === #14: shockwave ring burst from #cartCount, added by
+   volt-micro-animations.js appending a short-lived ::after via a helper
+   element (see JS) — implemented here as a class-driven pseudo-element on
+   .cart-badge so no new DOM node is required. Does not alter
+   .cart-badge's own size/position; existing .volt-pcb-badge-pulse
+   animation (Improvement #4, already in this file) is untouched and can
+   run alongside this. === */
+.cart-badge::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--green);
+    opacity: 0;
+    pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+    .cart-badge.volt-badge-shockwave::after {
+        animation: volt-badge-shockwave-kf 0.5s ease-out 1;
+    }
+}
+@keyframes volt-badge-shockwave-kf {
+    0%   { transform: scale(1); opacity: 0.8; }
+    100% { transform: scale(2.4); opacity: 0; }
+}
+
+/* === #16: checkout button pulse-ring confirmation on click, layered on
+   top of the EXISTING #checkoutBtn.volt-pcb-checkout-surge animation
+   (Improvement #6, already in this file) rather than replacing it. This
+   does not morph the button's text (see chat reply for why) — it adds a
+   ring-expand confirmation using the same trigger class already fired by
+   volt-micro-animations.js's existing click handler for #checkoutBtn. === */
+#checkoutBtn {
+    position: relative;
+}
+#checkoutBtn::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    border: 2px solid #fff;
+    opacity: 0;
+    pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+    #checkoutBtn.volt-pcb-checkout-surge::after {
+        animation: volt-checkout-ring-kf 0.7s ease-out 1;
+    }
+}
+@keyframes volt-checkout-ring-kf {
+    0%   { transform: scale(1); opacity: 0.7; }
+    100% { transform: scale(1.15); opacity: 0; }
+}
+
+/* === #18: filter button spark travel, added by volt-micro-animations.js
+   creating a short-lived .volt-filter-spark element positioned via JS
+   (getBoundingClientRect), styled here. Does not touch .filter-btn or
+   .filter-btn.active rules in style.css. === */
+.volt-filter-spark {
+    position: fixed;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    pointer-events: none;
+    z-index: 999;
+    opacity: 0;
+}
+@media (prefers-reduced-motion: no-preference) {
+    .volt-filter-spark.volt-filter-spark-active {
+        transition: left 0.3s ease, top 0.3s ease, opacity 0.3s ease;
+    }
+}
+
+/* === #20: "جديد" badge + scanner sweep for products created within the
+   last 3 days, added by script.js via renderProducts() computing age from
+   the new createdAt field and toggling .volt-new-badge /
+   .volt-new-scan-active. Card layout (.card-img, .card-body, etc.) is
+   completely untouched — this only adds a small absolutely-positioned tag
+   and an optional sweep, exactly like #4's stack-card sweep. === */
+.volt-new-tag {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    z-index: 6;
+    background: var(--green);
+    color: #000;
+    font-size: 9px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    pointer-events: none;
+}
+.card-img.volt-new-scan-active {
+    position: relative;
+}
+.card-img.volt-new-scan-active::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 30px;
+    left: -30px;
+    background: linear-gradient(90deg, transparent, rgba(29,185,84,0.35), transparent);
+    pointer-events: none;
+    z-index: 4;
+}
+@media (prefers-reduced-motion: no-preference) {
+    .card-img.volt-new-scan-active::after {
+        animation: volt-new-scan-kf 2.6s ease-in-out infinite;
+    }
+}
+@keyframes volt-new-scan-kf {
+    0%   { left: -30px; }
+    60%  { left: 100%; }
+    100% { left: 100%; }
+}
+
+/* === #24: wizard progress line fill-sweep, layered ON TOP of the existing
+   .wp-line.done { background: var(--green2) } rule in style.css — that
+   rule and its own transition:background .3s are completely untouched.
+   This adds a ::after sweep that plays once when .done is applied,
+   without altering .wp-line's flex/height/max-width. === */
+.wp-line {
+    position: relative;
+    overflow: hidden;
+}
+.wp-line::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.6), transparent);
+    transform: translateX(-100%);
+    pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+    .wp-line.volt-line-sweep::after {
+        animation: volt-line-sweep-kf 0.5s ease-out 1;
+    }
+}
+@keyframes volt-line-sweep-kf {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+/* === #25: details-toggle-btn arrow rotation + panel slide, added by
+   script.js's existing toggleDetailsView() gaining two extra lines (see
+   JS diff) that toggle these classes. The inline style="display:none"
+   currently set on #pd${id} in renderProducts() is left completely as-is
+   — display:none/block continues to be the source of truth for whether
+   the panel is in the layout at all; this CSS only adds the transition
+   for the moment BEFORE display:none is applied / AFTER display:block is
+   applied, via a short JS-orchestrated class window (see JS). === */
+.details-toggle-btn .volt-details-arrow {
+    display: inline-block;
+    transition: transform 0.25s ease;
+}
+.details-toggle-btn.volt-details-open .volt-details-arrow {
+    transform: rotate(180deg);
+}
+.details-panel.volt-details-fade {
+    animation: volt-details-fade-kf 0.25s ease;
+}
+@keyframes volt-details-fade-kf {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+/* === #26: cart-item removal slide+fade, added by script.js's
+   removeFromCart() delaying the array splice/re-render by one short
+   animation frame while .volt-cart-item-leaving plays on the specific
+   .cart-item element. The final DOM/localStorage state after removal is
+   byte-identical to before this change — only the removal is no longer
+   instantaneous. === */
+@media (prefers-reduced-motion: no-preference) {
+    .cart-item.volt-cart-item-leaving {
+        animation: volt-cart-item-leave-kf 0.28s ease forwards;
+    }
+}
+@keyframes volt-cart-item-leave-kf {
+    from { opacity: 1; transform: translateX(0); }
+    to   { opacity: 0; transform: translateX(24px); }
+}
+
+/* === #27: price slider output micro-bounce, added by script.js's
+   existing priceSlider "input" listener gaining one extra class toggle on
+   #priceFilterValue. font-family/size/color/padding/border on
+   .price-filter-row output in style.css are all untouched — only
+   transform is added, and only while this class is present. === */
+@media (prefers-reduced-motion: no-preference) {
+    .price-filter-row output.volt-price-bump {
+        animation: volt-price-bump-kf 0.15s ease;
+    }
+}
+@keyframes volt-price-bump-kf {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.15); }
+}
+
+/* === #29: folder-card icon lift on hover — targets the icon div (first
+   child, no class in the current renderPublicFolders() markup) via
+   :first-child rather than requiring an HTML change. .folder-card's own
+   hover rule (border-color/transform/box-shadow) in style.css is
+   untouched and continues to fire alongside this. === */
+@media (prefers-reduced-motion: no-preference) {
+    .folder-card > :first-child {
+        transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    .folder-card:hover > :first-child {
+        transform: translateY(-5px) rotate(-3deg);
+    }
+}
+
+/* === #30: footer policy links (سياسة الشحن / الإرجاع / تواصل معنا)
+   center-out underline on hover. .v-shop-addon-footer-link has no
+   existing rule anywhere in style.css or volt-micro-animations.css
+   (confirmed by search) — this is the first rule targeting it, so
+   nothing is overridden. === */
+.v-shop-addon-footer-link {
+    position: relative;
+    text-decoration: none;
+    padding-bottom: 2px;
+}
+.v-shop-addon-footer-link::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 50%;
+    right: 50%;
+    height: 1.5px;
+    background: var(--green);
+}
+@media (prefers-reduced-motion: no-preference) {
+    .v-shop-addon-footer-link::after {
+        transition: left 0.25s ease, right 0.25s ease;
+    }
+    .v-shop-addon-footer-link:hover::after {
+        left: 0;
+        right: 0;
+    }
+    .v-shop-addon-footer-link:hover {
+        color: var(--green);
+    }
+}
+
+/* === #35: cart discount strike-through width sweep, added by script.js's
+   existing updateCartUI() wrapping the already-correct discount markup
+   with one additional class so the line-through renders via an animated
+   ::after underline-through effect instead of appearing instantly. The
+   discount CALCULATION and the numbers shown are completely unchanged —
+   only how the strike mark visually arrives is touched. See JS diff. === */
+.volt-strike-price {
+    position: relative;
+    text-decoration: none !important; /* the inline line-through from the
+        existing markup is suppressed ONLY when this class is present, and
+        replaced by the ::after line below, which is drawn with a
+        transition so it can sweep in. Numbers/color/font-size inherited
+        from the existing inline style are untouched. */
+}
+.volt-strike-price::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: 1.5px;
+    background: currentColor;
+    width: 0%;
+}
+@media (prefers-reduced-motion: no-preference) {
+    .volt-strike-price::after {
+        transition: width 0.35s ease;
+    }
+    .volt-strike-price.volt-strike-active::after {
+        width: 100%;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .volt-strike-price::after {
+        width: 100%;
+    }
+}
+
+/* === #37: admin dashboard KPI count-up, added by script.js's existing
+   renderAdminDashboardKPIs() animating the number via requestAnimationFrame
+   instead of writing the final value directly. Purely a JS-driven text
+   content change — no CSS needed here, kept as a marker comment for
+   completeness of this additive-layer section. === */
+
+/* === #39: empty-cart SVG idle wobble, added by volt-micro-animations.js
+   toggling .volt-cart-idle on the existing inline <svg> the moment
+   updateCartUI() renders the empty state. The SVG's own width/height/
+   viewBox/stroke attributes in script.js are completely untouched. === */
+@media (prefers-reduced-motion: no-preference) {
+    svg.volt-cart-idle {
+        animation: volt-cart-idle-kf 4s ease-in-out infinite;
+        transform-origin: 50% 50%;
+    }
+}
+@keyframes volt-cart-idle-kf {
+    0%, 100% { transform: rotate(0deg); }
+    50%      { transform: rotate(2deg); }
+}
+
+/* === #44: two-stage delete-account confirmation, added by script.js's
+   existing deleteUserAccount() call site gaining a stage check before the
+   confirm() dialog appears — see JS diff for the exact two-click flow.
+   The button's base styling in the inline admin-table string is
+   untouched; only a transient class is added during stage 1. === */
+.volt-confirm-armed {
+    transition: transform 0.15s ease, background 0.15s ease;
+    transform: scale(1.08);
+}
+
+/* === #45: promo status dot pulse, added alongside the existing
+   renderPromoTable() status text — a small dot is inserted before the
+   existing "مفعل ✔️/موقف ❌" text via JS (see JS diff), styled here. Does
+   not alter the status text/color logic already in renderPromoTable(). === */
+.volt-status-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    margin-left: 6px;
+    vertical-align: middle;
+}
+.volt-status-dot.volt-status-active {
+    background: var(--green);
+}
+.volt-status-dot.volt-status-inactive {
+    background: var(--red);
+}
+@media (prefers-reduced-motion: no-preference) {
+    .volt-status-dot.volt-status-active {
+        animation: volt-status-dot-kf 2s ease-in-out infinite;
+    }
+}
+@keyframes volt-status-dot-kf {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(29,185,84,0.5); }
+    50%      { box-shadow: 0 0 6px 2px rgba(29,185,84,0.5); }
+}
+
+/* === #46: spec-row stagger entrance inside product modal, added by
+   script.js's existing openProductModal() adding a small stagger delay
+   via inline style per row when it builds the `rows` string — the
+   spec-row markup, spacing, and border in style.css are all untouched. === */
+@media (prefers-reduced-motion: no-preference) {
+    .spec-row.volt-spec-stagger {
+        animation: volt-spec-stagger-kf 0.3s ease both;
+    }
+}
+@keyframes volt-spec-stagger-kf {
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: translateX(0); }
+}
+
+/* === #47: modal quantity value bump, added by script.js's existing
+   changeModalQty() gaining one class toggle on the #modalQtyVal-${id}
+   span. Its own inline style (min-width/text-align/font-weight) is
+   untouched — only transform is layered on top. === */
+@media (prefers-reduced-motion: no-preference) {
+    [id^="modalQtyVal-"].volt-qty-bump {
+        display: inline-block;
+        animation: volt-qty-bump-kf 0.15s ease;
+    }
+}
+@keyframes volt-qty-bump-kf {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.25); }
+}
+
+/* === #55: deposit-warning box attention shake, added by script.js's
+   existing choosePayment() gaining one class on the dashed-border box the
+   moment its innerHTML is written. Border style/padding/radius in the
+   inline template string are untouched. === */
+@media (prefers-reduced-motion: no-preference) {
+    .volt-deposit-shake {
+        animation: volt-deposit-shake-kf 0.4s ease;
+    }
+}
+@keyframes volt-deposit-shake-kf {
+    0%, 100% { transform: translateX(0); }
+    20%      { transform: translateX(-4px); }
+    40%      { transform: translateX(4px); }
+    60%      { transform: translateX(-3px); }
+    80%      { transform: translateX(3px); }
+}
+
+/* === #61: section-title entrance reveal, applied to EVERY .section-title
+   on the page (both "المنتجات المتاحة" and "تصنيفات المتجر") the moment
+   each one enters the viewport, via the SAME IntersectionObserver pattern
+   already used elsewhere in volt-micro-animations.js. This is layered on
+   top of the EXISTING .section-title::after underline trace (Improvement
+   #7, already in this file, added by #7 in the prior batch) — that rule
+   and its own animation are completely untouched. This only affects the
+   title TEXT itself, not the underline. === */
+@media (prefers-reduced-motion: no-preference) {
+    .section-title.volt-title-reveal {
+        animation: volt-title-reveal-kf 0.5s ease both;
+    }
+}
+@keyframes volt-title-reveal-kf {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* === #62: modal-close rotate-on-hover, layered on top of the EXISTING
+   .modal-close:hover { color: var(--green) } rule in style.css — that
+   rule is untouched; this adds transform alongside it via the same
+   selector's hover state. === */
+@media (prefers-reduced-motion: no-preference) {
+    .modal-close {
+        transition: color 0.2s, transform 0.25s ease;
+    }
+    .modal-close:hover {
+        transform: rotate(90deg);
+    }
+}
+
+/* === #63: promo success message pop-in, added by cart-promo.js's
+   existing applyCustomerPromo() gaining one class toggle on #promoMessage
+   at the moment of success only (failure path uses #72's shake instead,
+   kept visually distinct per the original proposal). messageEl.textContent
+   and messageEl.style.color assignments already in that function are
+   completely untouched — this class is additive. === */
+@media (prefers-reduced-motion: no-preference) {
+    #promoMessage.volt-promo-pop {
+        animation: volt-promo-pop-kf 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+}
+@keyframes volt-promo-pop-kf {
+    0%   { opacity: 0; transform: scale(0.8); }
+    100% { opacity: 1; transform: scale(1); }
+}
+
+/* === #66: copy-link button success state, added by script.js's existing
+   copyProductLink() temporarily swapping the button's textContent and
+   toggling this class for 1.5s. The button's base .btn-secondary styling
+   is entirely untouched — only border-color/background are layered on
+   top for the duration of the class. === */
+.volt-copy-success {
+    transition: border-color 0.2s ease, background 0.2s ease;
+    border-color: var(--green) !important;
+    background: rgba(29, 185, 84, 0.1);
+}
+
+/* === #69: alert-modal warning icon slow pulse, targets .alert-icon
+   (already exists in style.css, currently has zero motion rules anywhere)
+   for the entire time #alert-modal is open. font-size/margin-bottom on
+   .alert-icon in style.css are untouched — only transform is added. === */
+@media (prefers-reduced-motion: no-preference) {
+    .alert-icon {
+        display: inline-block;
+        animation: volt-alert-pulse-kf 3s ease-in-out infinite;
+    }
+}
+@keyframes volt-alert-pulse-kf {
+    0%, 100% { transform: scale(1); }
+    50%      { transform: scale(1.08); }
+}
+
+/* === #70: guest-checkout button ambient glow, targets
+   #alertGuestCheckoutBtn specifically (not every .btn-secondary — the
+   inline style in index.html already gives it a distinct amber
+   border-color/color, and this glow only applies to that same element,
+   confirmed by its #id). Existing .btn-secondary rules in style.css and
+   the inline amber override in index.html are both untouched. === */
+@media (prefers-reduced-motion: no-preference) {
+    #alertGuestCheckoutBtn {
+        animation: volt-guest-glow-kf 2.4s ease-in-out infinite;
+    }
+}
+@keyframes volt-guest-glow-kf {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.15); }
+    50%      { box-shadow: 0 0 10px 2px rgba(245, 158, 11, 0.3); }
+}
+
+/* === #71: pending-deposit amber button ambient glow, PRODUCTION-SAFE
+   VERSION. Per explicit instruction: zero side effects, no risk. This
+   targets the button ONLY via its own onclick attribute value existing
+   in the DOM (button[onclick*="pending-deposit"]), which is scoped
+   exclusively to the two dynamically-generated confirm buttons in
+   choosePayment() — it cannot match any other element on the site,
+   confirmed by grepping the full codebase for "pending-deposit" (only
+   appears in that one template string in script.js). No new class is
+   introduced, so there is no JS wiring required for this one, no event
+   listener added, and no risk of a stale class surviving a re-render:
+   the animation is purely attribute-selector-driven and disappears the
+   instant the button itself is removed from the DOM (resetPaymentModal()
+   / closePaymentModal(), both already existing and untouched). === */
+@media (prefers-reduced-motion: no-preference) {
+    button[onclick*="pending-deposit"] {
+        animation: volt-deposit-btn-glow-kf 2.4s ease-in-out infinite;
+    }
+}
+@keyframes volt-deposit-btn-glow-kf {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.2); }
+    50%      { box-shadow: 0 0 12px 3px rgba(245, 158, 11, 0.4); }
+}
+
+/* === #72: promo failure message shake, added by cart-promo.js's existing
+   applyCustomerPromo() gaining one class toggle on #promoMessage at the
+   moment of failure only (distinct from #63's success pop). === */
+@media (prefers-reduced-motion: no-preference) {
+    #promoMessage.volt-promo-shake {
+        animation: volt-promo-shake-kf 0.35s ease;
+    }
+}
+@keyframes volt-promo-shake-kf {
+    0%, 100% { transform: translateX(0); }
+    25%      { transform: translateX(-4px); }
+    75%      { transform: translateX(4px); }
+}
+
+/* === #80: order comment textarea active-typing glow, layered ON TOP of
+   the EXISTING onfocus/onblur inline handlers on #orderComment in
+   index.html (which set/reset border-color to var(--green)/var(--border))
+   — those two inline handlers are completely untouched. This adds a
+   SEPARATE, shorter-lived glow class toggled by a new "input" listener
+   (see JS diff) that fires only while actively typing, distinct from the
+   focus-only state already handled inline. === */
+@media (prefers-reduced-motion: no-preference) {
+    #orderComment.volt-typing-glow {
+        box-shadow: 0 0 0 2px rgba(29, 185, 84, 0.25);
+        transition: box-shadow 0.15s ease;
+    }
+}

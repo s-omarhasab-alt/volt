@@ -1,0 +1,206 @@
+/* ==========================================================================
+   🔧 MIGRATION — حساب priceTier للمنتجات الموجودة مسبقاً في Firestore
+   ==========================================================================
+
+   السياق: فلتر السعر اتحوّل من سلايدر برقم حر إلى أزرار شرايح ثابتة
+   (شوف getProductsPageFromFirestore و calcPriceTier في config.js). أي
+   منتج جديد بيتضاف من دلوقتي بيحسب priceTier تلقائياً (شوف
+   addProductToFirestore في config.js) — لكن المنتجات اللي كانت موجودة
+   في Firestore *قبل* التعديل ده مالهاش الحقل ده خالص، فمش هتظهر في أي
+   فلتر شريحة سعر لحد ما تتحدّث مرة واحدة، وده بالظبط اللي السكريبت ده
+   بيعمله.
+
+   ⚠️ يتشغّل مرة واحدة بس، يدوياً، من الأدمن. مش جزء من تحميل الموقع
+   العادي — عمداً مش متضاف لأي <script> tag في index.html، عشان محدش
+   زائر عادي يقدر يشغّله بالغلط.
+
+   ==========================================================================
+   إزاي تشغّله (طريقتين، اختار الأسهل ليك):
+
+   الطريقة 1 — من الـ Browser Console مباشرة (الأسهل، بلا تعديل أي ملف):
+     1. افتح موقعك (لازم تكون مسجّل دخول كـ admin، عشان Firestore Rules
+        بتاعتك بتسمح بالكتابة على /products للأدمن بس).
+     2. افتح DevTools → Console.
+     3. انسخ محتوى الملف ده كامل، الصقه في الـ console، دوس Enter.
+     4. السكريبت هيشتغل لوحده — هيطبعلك تقرير الفحص الأول، وهيوقفلك سؤال
+        تأكيد لو محتاج تكمل للحفظ الفعلي.
+
+   الطريقة 2 — كـ <script> مؤقت في صفحة الأدمن:
+     1. ضيف <script type="module" src="migrate-price-tiers.js" defer></script>
+        في index.html، بعد config.js وقبل script.js.
+     2. افتح الموقع، سجّل دخول كأدمن، افتح الـ Console عشان تشوف التقرير.
+     3. لما يخلص، امسح سطر الـ <script> ده من index.html — مش محتاجه تاني
+        بعد ما يشتغل مرة واحدة بنجاح.
+   ========================================================================== */
+
+(async function migratePriceTiers() {
+    "use strict";
+
+    // ── انتظار جاهزية Firebase (نفس النمط المستخدم في باقي الملفات، شوف
+    // filter.js و الكود اللي بيستنى voltFirebaseReady في index.html) ──
+    async function waitForFirebase() {
+        if (window.voltFirebase && typeof window.voltFirebase.getProducts === "function") return;
+        await new Promise((resolve) => {
+            window.addEventListener("voltFirebaseReady", resolve, { once: true });
+        });
+    }
+
+    await waitForFirebase();
+
+    if (typeof window.voltFirebase.calcPriceTier !== "function") {
+        console.error(
+            "❌ migrate-price-tiers: window.voltFirebase.calcPriceTier غير موجودة. " +
+            "تأكد إن config.js المُحدّث (اللي بيحتوي على calcPriceTier) اتحمّل فعلاً " +
+            "قبل ما تشغّل السكريبت ده."
+        );
+        return;
+    }
+
+    console.log("🔍 migrate-price-tiers: بدء الفحص (dry run — بدون أي حفظ لسه)...");
+
+    // ==========================================================================
+    // المرحلة 1: الفحص الكامل — بدون أي كتابة في Firestore خالص
+    // ==========================================================================
+    let allProducts;
+    try {
+        allProducts = await window.voltFirebase.getProducts();
+    } catch (err) {
+        console.error("❌ migrate-price-tiers: فشل جلب المنتجات من Firestore", err);
+        return;
+    }
+
+    if (!Array.isArray(allProducts) || allProducts.length === 0) {
+        console.log("ℹ️ migrate-price-tiers: مفيش منتجات في Firestore خالص. لا حاجة لعمل migration.");
+        return;
+    }
+
+    const toUpdate = [];   // منتجات ليها priceTier محسوبة صح، محتاجة تتحدّث
+    const alreadyOk = [];  // منتجات priceTier بتاعتها موجودة ومطابقة للسعر الحالي أصلاً
+    const problems = [];   // منتجات سعرها غير صالح — دي اللي بتوقف الـ migration كله
+
+    for (const p of allProducts) {
+        const computedTier = window.voltFirebase.calcPriceTier(p.price);
+
+        if (computedTier === null) {
+            // سعر غير صالح (مش رقم، أو undefined، أو سالب) — هنا بالظبط
+            // بيتوقف السكريبت، بدل ما يفترض شريحة غلط بصمت أو يسيب فجوة.
+            problems.push({
+                id: p.id,
+                name: p.name || "(بدون اسم)",
+                rawPrice: p.price,
+                priceType: typeof p.price
+            });
+            continue;
+        }
+
+        if (p.priceTier === computedTier) {
+            // priceTier موجودة أصلاً ومطابقة — مفيش داعي نكتبها تاني
+            // (منتج اتضاف بعد التعديل، أو migration سابق شغّله بنجاح).
+            alreadyOk.push({ id: p.id, name: p.name, priceTier: p.priceTier });
+            continue;
+        }
+
+        toUpdate.push({
+            id: p.id,
+            name: p.name || "(بدون اسم)",
+            price: p.price,
+            oldPriceTier: p.priceTier ?? "(مش موجودة)",
+            newPriceTier: computedTier
+        });
+    }
+
+    // ── تقرير الفحص — بيتطبع دايماً، سواء فيه مشاكل ولا لأ ──
+    console.log("📋 migrate-price-tiers: نتيجة الفحص:");
+    console.log(`   • إجمالي المنتجات: ${allProducts.length}`);
+    console.log(`   • محتاجة تحديث priceTier: ${toUpdate.length}`);
+    console.log(`   • priceTier بتاعتها صح أصلاً (هيتم تخطيها): ${alreadyOk.length}`);
+    console.log(`   • فيها مشكلة (سعر غير صالح): ${problems.length}`);
+
+    // ==========================================================================
+    // لو فيه مشاكل → نوقف هنا، منكتبش ولا حرف في Firestore
+    // ==========================================================================
+    if (problems.length > 0) {
+        console.error(
+            `\n🛑 migrate-price-tiers: توقف الـ migration بالكامل — ${problems.length} منتج ` +
+            `عنده سعر غير صالح. لازم تصلّحهم من لوحة الأدمن الأول (تعديل المنتج → السعر)، ` +
+            `وبعدين تشغّل السكريبت ده تاني من الأول.\n`
+        );
+        console.table(problems.map(p => ({
+            "معرّف المنتج (id)": p.id,
+            "اسم المنتج": p.name,
+            "السعر الحالي": p.rawPrice === undefined ? "(الحقل غير موجود خالص)" : String(p.rawPrice),
+            "نوع القيمة": p.priceType
+        })));
+        console.warn(
+            "لا حاجة اتحفظت في Firestore. الفحص كان بالكامل بدون كتابة — منتجاتك بأمان."
+        );
+        return;
+    }
+
+    if (toUpdate.length === 0) {
+        console.log(
+            "✅ migrate-price-tiers: كل المنتجات محدّثة أصلاً بـ priceTier صح. " +
+            "مفيش حاجة محتاجة تتعمل."
+        );
+        return;
+    }
+
+    // ==========================================================================
+    // المرحلة 2: الحفظ الفعلي — منفصلة تماماً عن الفحص، وبتتطلب تأكيد صريح
+    // ==========================================================================
+    console.log(`\n📝 هيتم تحديث ${toUpdate.length} منتج بالتفصيل ده:`);
+    console.table(toUpdate.map(p => ({
+        "معرّف المنتج (id)": p.id,
+        "اسم المنتج": p.name,
+        "السعر": p.price,
+        "priceTier القديمة": p.oldPriceTier,
+        "priceTier الجديدة": p.newPriceTier
+    })));
+
+    const confirmed = window.confirm(
+        `تأكيد: هيتم تحديث priceTier لـ ${toUpdate.length} منتج في Firestore الآن.\n\n` +
+        `الفحص كان نظيف (مفيش منتجات فيها مشكلة). تحب تكمل للحفظ الفعلي؟`
+    );
+
+    if (!confirmed) {
+        console.log("⏸️ migrate-price-tiers: اتلغى بواسطة المستخدم. لا حاجة اتحفظت.");
+        return;
+    }
+
+    console.log("💾 migrate-price-tiers: بدء الحفظ...");
+
+    let successCount = 0;
+    let failCount = 0;
+    const failures = [];
+
+    for (const p of toUpdate) {
+        try {
+            // بنبعت priceTier مباشرة هنا (مش price)، عشان دالة
+            // updateProductInFirestore في config.js بتحسب priceTier تلقائياً
+            // بس لو updatedFields.price موجودة (شوف الشرط هناك) — إحنا مش
+            // عايزين نغيّر السعر نفسه، بس نضيف/نصلّح الحقل priceTier المحسوب
+            // مسبقاً هنا. الكتابة المباشرة دي آمنة لأنها نفس القيمة اللي
+            // calcPriceTier كانت هتحسبها من نفس السعر بالظبط.
+            const ok = await window.voltFirebase.updateProduct(String(p.id), {
+                priceTier: p.newPriceTier
+            });
+            if (ok) {
+                successCount++;
+            } else {
+                failCount++;
+                failures.push({ id: p.id, name: p.name, reason: "updateProduct رجّعت false" });
+            }
+        } catch (err) {
+            failCount++;
+            failures.push({ id: p.id, name: p.name, reason: err.message || String(err) });
+        }
+    }
+
+    console.log(`\n✅ migrate-price-tiers: خلص. نجح: ${successCount} — فشل: ${failCount}`);
+    if (failures.length > 0) {
+        console.warn("⚠️ المنتجات دي فشلت، شغّل السكريبت تاني بعد ما تتأكد من الاتصال:");
+        console.table(failures);
+    } else {
+        console.log("🎉 كل المنتجات اتحدّثت بنجاح. فلتر السعر الجديد جاهز يشتغل على كل الكتالوج.");
+    }
+})();

@@ -272,6 +272,12 @@
 
                 messageEl.textContent = "🎉 تم تطبيق الخصم بنجاح!";
                 messageEl.style.color = "#1db954";
+                // === #63: pop-in on success, purely visual — does not
+                // alter the text/color logic above.
+                messageEl.classList.remove("volt-promo-shake");
+                messageEl.classList.remove("volt-promo-pop");
+                void messageEl.offsetWidth;
+                messageEl.classList.add("volt-promo-pop");
 
                 if (typeof updateCartUI === "function") updateCartUI();
             } else {
@@ -295,6 +301,18 @@
                     ? "❌ انتهت صلاحية كود الخصم."
                     : "❌ كود الخصم غير صالح أو منتهي الصلاحية.";
                 messageEl.style.color = "#ff4444";
+                // === #72: shake on failure, purely visual — does not alter
+                // the message text logic above. (#76's number-highlight is
+                // NOT implemented: the server response this branch reads
+                // from — validatePromoCodeInFirestore in config.js — never
+                // sends the actual minOrder number back to the client, only
+                // the reason string "min_order", so there is no number
+                // available here to highlight without changing what the
+                // server returns, which is outside pure animation scope.)
+                messageEl.classList.remove("volt-promo-pop");
+                messageEl.classList.remove("volt-promo-shake");
+                void messageEl.offsetWidth;
+                messageEl.classList.add("volt-promo-shake");
 
                 if (typeof updateCartUI === "function") updateCartUI();
             }
