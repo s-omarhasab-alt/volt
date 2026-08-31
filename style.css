@@ -2217,10 +2217,18 @@ background-color: var(--green);
 
 /* نفس القيمة المعدّلة في index.html (inline <style> جوه #scrollSplitCard)
    — لازم الاتنين يفضلوا متطابقين، لأن الملفين بيعرّفوا نفس المتغير على
-   :root وأي فرق بينهم هيخلق تعارض قيمة حسب ترتيب الـ cascade. */
+   :root وأي فرق بينهم هيخلق تعارض قيمة حسب ترتيب الـ cascade.
+   FIX (mobile length pass): كانت 60vh — لسه بتضيف مسافة سكرول طويلة
+   فوق ارتفاع الكارت الثابت (100vh) نفسه. قللناها لـ 35vh، وقللنا
+   ارتفاع .ssc__sticky نفسه لـ 70vh تحت (بدل ما يفضل شاشة كاملة) —
+   الاتنين مع بعض هما اللي بيحددوا الطول الكلي للقسم على الموبايل. */
 @media (max-width: 600px) {
     :root {
-        --ssc-scroll-distance: 60vh;
+        --ssc-scroll-distance: 35vh;
+    }
+
+    .ssc__sticky {
+        height: 70vh;
     }
 }
 
@@ -2408,6 +2416,38 @@ background-color: var(--green);
 
     .ssc__face--back p {
         font-size: .82rem;
+    }
+
+    /* FIX (mobile length pass): style.css كان مفيش فيه أي mobile override
+       لـ .ssc__panels خالص — الـ 20%/20% (60% عرض) بتاعة الديسكتوب كانت
+       بتفضل نظرياً معرّفة هنا حتى لو index.html's inline <style> هو اللي
+       بيفوز فعلياً في الكاسكيد (بيتحمّل بعد style.css في ترتيب الصفحة).
+       ضيف نفس القيمة الموجودة في index.html هنا (left/right:3%، يعني 94%
+       عرض) عشان الملفين يفضلوا متطابقين ومفيش اعتماد ضمني على ترتيب تحميل. */
+    .ssc__panels {
+        left: 3%;
+        right: 3%;
+        gap: calc(var(--ssc-split, 0) * clamp(3px, 1vw, 16px));
+    }
+}
+
+/* FIX (mobile length pass): كانت بتخفي الوصف بالكامل (display:none) على
+   أضيق الشاشات لأن كل بانل من التلاتة كان بياخد مساحة ضيقة جداً (~100px)
+   مع هوامش 20%/20%. مع تضييق الهوامش لـ 1%/1% فوق (98% عرض) بقى كل بانل
+   أعرض شوية (~105-135px حسب الشاشة)، وده كافي لعرض الوصف بخط أصغر (0.62rem)
+   بدون ما ينكسر لحروف منفصلة — الكلمات العربية بتلف عادي عند المسافة، مش
+   حرف حرف، فسطرين-تلاتة قصيرين مقروءين بدل الاختفاء التام. */
+@media (max-width: 480px) {
+    .ssc__panels {
+        left: 1%;
+        right: 1%;
+    }
+
+    .ssc__face--back p {
+        display: block;
+        font-size: .62rem;
+        line-height: 1.35;
+        margin-bottom: .35rem;
     }
 }
 
@@ -2617,34 +2657,5 @@ background-color: var(--green);
         max-width: 85vw;
         font-size: 14px;
         margin-bottom: 18px;
-    }
-}
-/* === FOUNDER SOCIAL ICONS — ambient ring pulse, no hover needed ===
-   يشتغل تلقائياً من غير تفاعل من المستخدم (موبايل أولاً). كل أيقونة
-   عندها delay مختلف (شوف style="animation-delay" على كل عنصر في
-   الـ HTML) عشان الوميض يمشي من أيقونة للتانية بدل ما الأربعة يلمعوا
-   مع بعض في نفس اللحظة. */
-@media (prefers-reduced-motion: no-preference) {
-    .v-shop-addon-social-icon {
-        animation: volt-social-pulse 2.6s ease-in-out infinite;
-    }
-}
-
-@keyframes volt-social-pulse {
-    0%, 100% {
-        box-shadow: 0 0 0 0 rgba(29, 185, 84, 0.45);
-        border-color: var(--border);
-    }
-    50% {
-        box-shadow: 0 0 0 6px rgba(29, 185, 84, 0);
-        border-color: var(--green);
-    }
-}
-
-/* Reduced-motion: الأيقونة تفضل بحدها الأخضر ثابت، من غير أي أنيميشن —
-   نفس المبدأ المستخدم في كل مكان تاني في الملف ده. */
-@media (prefers-reduced-motion: reduce) {
-    .v-shop-addon-social-icon {
-        border-color: var(--green-dim);
     }
 }
