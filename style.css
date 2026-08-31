@@ -2619,3 +2619,32 @@ background-color: var(--green);
         margin-bottom: 18px;
     }
 }
+/* === FOUNDER SOCIAL ICONS — ambient ring pulse, no hover needed ===
+   يشتغل تلقائياً من غير تفاعل من المستخدم (موبايل أولاً). كل أيقونة
+   عندها delay مختلف (شوف style="animation-delay" على كل عنصر في
+   الـ HTML) عشان الوميض يمشي من أيقونة للتانية بدل ما الأربعة يلمعوا
+   مع بعض في نفس اللحظة. */
+@media (prefers-reduced-motion: no-preference) {
+    .v-shop-addon-social-icon {
+        animation: volt-social-pulse 2.6s ease-in-out infinite;
+    }
+}
+
+@keyframes volt-social-pulse {
+    0%, 100% {
+        box-shadow: 0 0 0 0 rgba(29, 185, 84, 0.45);
+        border-color: var(--border);
+    }
+    50% {
+        box-shadow: 0 0 0 6px rgba(29, 185, 84, 0);
+        border-color: var(--green);
+    }
+}
+
+/* Reduced-motion: الأيقونة تفضل بحدها الأخضر ثابت، من غير أي أنيميشن —
+   نفس المبدأ المستخدم في كل مكان تاني في الملف ده. */
+@media (prefers-reduced-motion: reduce) {
+    .v-shop-addon-social-icon {
+        border-color: var(--green-dim);
+    }
+}
