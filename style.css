@@ -2445,7 +2445,7 @@ background-color: var(--green);
 
     .ssc__face--back p {
         display: block;
-        font-size: .62rem;
+        font-size: 5rem;
         line-height: 1.35;
         margin-bottom: .35rem;
     }
