@@ -1416,12 +1416,7 @@ function updateNavForUser() {
         document.getElementById("cartBtn").addEventListener("click", () => { updateCartUI(); document.getElementById("cart-overlay").classList.add("open"); });
         document.getElementById("adminDashboardBtn")?.addEventListener("click", openAdminDashboard);
     } else if (currentUser.role === "admin") {
-        // #taskMgmtBtn no longer rendered in the header — it now lives
-        // as a static button inside #admin-modal (index.html), reachable
-        // only once this admin branch's own "لوحة التحكم ⚙️" button opens
-        // that modal. No listener to attach here anymore.
         area.innerHTML = `
-            <span class="nav-user" style="color:var(--amber);">🛡️ لوحة الإدارة</span>
             <button id="adminDashboardBtn" class="nav-cart" style="background:var(--amber); color:#000; border:none; font-weight:bold;">لوحة التحكم ⚙️</button>
             <button class="nav-logout" onclick="logout()" style="background:transparent;color:var(--muted);border:1px solid var(--border);padding:6px 12px;border-radius:6px;cursor:pointer;">خروج</button>`;
         document.getElementById("adminDashboardBtn").addEventListener("click", openAdminDashboard);
