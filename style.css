@@ -783,14 +783,17 @@ nav {
 
 .modal-close {
     position: absolute;
-    top: 16px;
-    left: 16px;
+    top: 8px;
+    left: 8px;
+    width: 60px;   
+    height: 60px;  
+    padding: 0;
     background: none;
     border: none;
     color: var(--muted);
-    font-size: 22px;
+    font-size: 50px;
     cursor: pointer;
-    line-height: 1;
+    line-height: 5;
     transition: color .2s
 }
 
