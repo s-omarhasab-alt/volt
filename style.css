@@ -785,15 +785,18 @@ nav {
     position: absolute;
     top: 8px;
     left: 8px;
-    width: 60px;   
-    height: 60px;  
+    width: 44px;
+    height: 44px;
     padding: 0;
     background: none;
     border: none;
     color: var(--muted);
-    font-size: 50px;
+    font-size: 28px;
     cursor: pointer;
-    line-height: 5;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     transition: color .2s
 }
 
@@ -2448,7 +2451,7 @@ background-color: var(--green);
 
     .ssc__face--back p {
         display: block;
-        font-size: 5rem;
+        font-size: .62rem;
         line-height: 1.35;
         margin-bottom: .35rem;
     }

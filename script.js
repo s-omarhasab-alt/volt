@@ -78,23 +78,65 @@ async function getProducts() {
 // على إن منتج شافه العميل قبل كده لسه موجود في الكاش بعد ما يعمل scroll
 // لصفحة تانية. دلوقتي union بالـ id: أي منتج جديد يتضاف/يتحدّث، أي منتج
 // قديم في الكاش يفضل موجود من غير ما يتلمس.
+// PERF (O(n×m) -> O(n+m)): كانت existing.filter(p => !newProds.some(...))
+// بتعمل .some() كامل جوه .filter() — يعني لكل عنصر في existing (n)، بتلف
+// على newProds (m) بالكامل. مع نمو volt_products cache في localStorage
+// (بيتنادى مع كل addToCart/removeFromCart/infinite-scroll page)، ده بيبقى
+// nested loop حقيقي بيتنفذ sync على الـ main thread. الحل: نبني Map واحدة
+// من newProds (O(m))، وبعدين .filter() على existing بتعمل .has() على الـ
+// Map (O(1) لكل lookup بدل O(m)) — يبقى الإجمالي O(n+m) مش O(n×m).
+// منطق الـ union نفسه (أي منتج قديم في الكاش يفضل موجود، أي جديد يستبدل
+// القديم بنفس الـ id) متغيّرش خالص — نفس الـ behavior بالظبط.
+// PERF FIX (load-test audit): the union merge above (any old product in
+// cache stays, any new product replaces one with the same id) had no cap.
+// Every call was purely additive, so over a long infinite-scroll session
+// this array — and the cost of JSON.stringify-ing it on every single
+// addToCart/removeFromCart/deleteProduct call — grew without bound: an
+// unbounded client-side memory leak plus a per-call serialization cost
+// that got worse the longer the session ran. VOLT_PRODUCTS_CACHE_MAX caps
+// the cache at 500 entries (far above what a single page or normal
+// browsing session accumulates), evicting the oldest entries first once
+// over the cap. newProds (whatever this specific call is saving right
+// now) are always concatenated last and therefore never evicted by this
+// slice, so nothing this call is actively trying to save can be dropped
+// by its own write.
+const VOLT_PRODUCTS_CACHE_MAX = 500;
 function saveProducts(newProds) {
     let existing = [];
     try {
         existing = JSON.parse(localStorage.getItem("volt_products")) || [];
     } catch (e) { existing = []; }
 
-    const merged = existing.filter(
-        p => !newProds.some(np => String(np.id) === String(p.id))
-    ).concat(newProds);
+    const newIds = new Map(newProds.map(p => [String(p.id), p]));
+    let merged = existing
+        .filter(p => !newIds.has(String(p.id)))
+        .concat(newProds);
+
+    if (merged.length > VOLT_PRODUCTS_CACHE_MAX) {
+        merged = merged.slice(merged.length - VOLT_PRODUCTS_CACHE_MAX);
+    }
 
     localStorage.setItem("volt_products", JSON.stringify(merged));
 }
-const getUsers = () => JSON.parse(localStorage.getItem("volt_users"));
-const saveUsers = (users) => localStorage.setItem("volt_users", JSON.stringify(users));
+const getUsers = () => {
+    try {
+        const parsed = JSON.parse(localStorage.getItem("volt_users"));
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+};
+const saveUsers = (users) => {
+    try { localStorage.setItem("volt_users", JSON.stringify(users)); } catch (e) { }
+};
 
-const getOrders = () => JSON.parse(localStorage.getItem("volt_orders"));
-const saveOrders = (orders) => localStorage.setItem("volt_orders", JSON.stringify(orders));
+const getOrders = () => {
+    try {
+        const parsed = JSON.parse(localStorage.getItem("volt_orders"));
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) { return []; }
+};
+const saveOrders = (orders) => {
+    try { localStorage.setItem("volt_orders", JSON.stringify(orders)); } catch (e) { }
+};
 
 // المتغيرات العامة للجلسة الحالية
 function loadCart() {
@@ -111,6 +153,23 @@ function saveCart() {
     } catch (e) { }
 }
 let cart = loadCart();
+// SECURITY: holds the idempotency key for the CURRENT checkout attempt.
+// Generated lazily on first use inside processFinalOrder() and
+// deliberately NOT regenerated on a failed/retried attempt within the
+// same checkout — if it were regenerated every call, a network-level
+// retry (timeout, connection drop) would send a DIFFERENT key each time,
+// which defeats the entire point: the server-side idempotency check in
+// functions/index.js can only recognize "this is the same attempt as
+// before" if the same key is reused across retries. Cleared only once an
+// order is confirmed successfully (see the end of processFinalOrder()),
+// so the NEXT separate checkout (new cart, later time) correctly gets a
+// fresh key instead of accidentally colliding with a completed one.
+let _voltCurrentOrderIdempotencyKey = null;
+const IDEMPOTENCY_KEY_STORAGE = "volt_pending_order_idempotency_key";
+function getOrderIdempotencyKey() { try { return sessionStorage.getItem(IDEMPOTENCY_KEY_STORAGE) || null; } catch (e) { return null; } }
+function setOrderIdempotencyKey(key) { try { sessionStorage.setItem(IDEMPOTENCY_KEY_STORAGE, key); } catch (e) {} }
+function clearOrderIdempotencyKey() { try { sessionStorage.removeItem(IDEMPOTENCY_KEY_STORAGE); } catch (e) {} }
+const ORDER_LOCK_TIMEOUT_MS = 20000; let _voltOrderLockTimeoutId = null;
 let currentUser = null; // يحمل بيانات اليوزر الحالية أو الأدمن
 let activeCategory = "all"; // التصنيف النشط في شريط الفلاتر
 let activePriceMax = null; // الحد الأقصى للسعر من السلايدر — null يعني بدون فلترة سعر
@@ -120,6 +179,29 @@ const WA_NUMBER = "201108199917";
 let currentPageCursor = null;   // آخر document شفناه (null = أول صفحة)
 let currentPageHasMore = true;  // هل فيه صفحة بعد كده
 let isLoadingNextPage = false;  // قفل يمنع تحميل مزدوج أثناء الـ scroll
+// FIX (race condition): يمنع تكرار الاستماع لـ voltFirebaseReady لو applyProductFilters()
+// اتنادت أكتر من مرة قبل ما Firebase يجهز (مثلاً العميل بدّل فلتر مرتين بسرعة على نت بطيء)
+let voltProductFiltersRetryBound = false;
+
+// PERF: كاش نتائج بحث/فلترة محدود بمدة الجلسة (تاب واحد، مش shared بين
+// المستخدمين) — بيمنع applyProductFilters() من ضرب Firestore تاني لو
+// العميل رجع لنفس تركيبة (تصنيف + سعر + بحث) خلال 60 ثانية (مثلاً ضغط
+// زرار "الكل" بعد "آردوينو" ورجع تاني، أو بدّل فلتر السعر بسرعة ورجع
+// لنفس القيمة). المفتاح = تركيبة الفلاتر الثلاثة نفسها؛ صفحات الـ
+// scroll التالية (loadNextProductsPage) مش متأثرة — دي بس أول صفحة.
+const _searchQueryCache = new Map();
+const SEARCH_CACHE_TTL_MS = 60000;
+function _voltGetSearchCacheKey(category, maxPrice, searchPrefix) {
+    return `${category}|${maxPrice}|${searchPrefix}`;
+}
+const SEARCH_CACHE_MAX_ENTRIES = 40;
+function _voltCacheSearchResult(cacheKey, entry) {
+    if (_searchQueryCache.size >= SEARCH_CACHE_MAX_ENTRIES && !_searchQueryCache.has(cacheKey)) {
+        const oldestKey = _searchQueryCache.keys().next().value;
+        _searchQueryCache.delete(oldestKey);
+    }
+    _searchQueryCache.set(cacheKey, entry);
+}
 
 // تنظيف أي نص قبل حقنه في innerHTML لمنع DOM-based XSS (نفس الطريقة
 // المستخدمة بالفعل في كود الفولدرز وإدارة المهام أسفل الملف)
@@ -127,6 +209,9 @@ function escapeHtml(str) {
     const div = document.createElement("div");
     div.textContent = str == null ? "" : String(str);
     return div.innerHTML;
+}
+function safeId(id) {
+    return String(id == null ? "" : id).replace(/[^a-zA-Z0-9_-]/g, "");
 }
 
 // ==========================================================================
@@ -158,14 +243,23 @@ document.addEventListener("DOMContentLoaded", async () => {
     initGlowCardPerformance();
     setupModals();
 
-    // محاولة استرجاع جلسة تسجيل دخول سابقة لراحة العميل
-    if (sessionStorage.getItem("volt_logged_user")) {
-        currentUser = JSON.parse(sessionStorage.getItem("volt_logged_user"));
+    // Firebase Auth and the user profile document are the session authority.
+    sessionStorage.removeItem("volt_logged_user");
+    if (window.voltFirebase && typeof window.voltFirebase.getCurrentUserProfile === "function") {
+        currentUser = await window.voltFirebase.getCurrentUserProfile();
         updateNavForUser();
     }
 
     // فتح مودال المنتج مباشرة لو المستخدم دخل برابط منتج (#/product/{id})
     handleProductRouteFromHash();
+});
+
+window.addEventListener("voltAuthStateChanged", async (event) => {
+    const previousRole = currentUser && currentUser.role;
+    currentUser = event.detail || null;
+    sessionStorage.removeItem("volt_logged_user");
+    updateNavForUser();
+    if (previousRole !== (currentUser && currentUser.role)) await applyProductFilters();
 });
 
 /* ==========================================================================
@@ -211,20 +305,22 @@ function isVoltNew(p) {
 // يحتاج تتعمل في مكانين، وده مصدر أخطاء مضمون بمرور الوقت).
 function buildProductCardHTML(p) {
     const isAdmin = currentUser && currentUser.role === "admin";
+    const pid = safeId(p.id);
+    if (!pid) return "";
     return `
-        <div class="card glow-card" data-id="${p.id}" style="position:relative;">
-            ${isAdmin ? `<button class="product-delete-btn" data-testid="product-delete-btn-${p.id}" onclick="deleteProduct(event, '${p.id}')" title="حذف المنتج من المتجر">×</button>` : ''}
-            <div class="card-img${isVoltNew(p) ? ' volt-new-scan-active' : ''}" style="position:relative;" onclick="openProductModal('${p.id}')">${isVoltNew(p) ? '<span class="volt-new-tag">جديد</span>' : ''}${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}                ${p.stock <= 0 ?
-            `<button class="fab-add fab-add--disabled" data-testid="product-add-btn-${p.id}" disabled>×</button>` :
-            `<button class="fab-add fab-add--active" id="btn-add-${p.id}" data-testid="product-add-btn-${p.id}" onclick="event.stopPropagation(); openProductModal('${p.id}');" title="عرض المنتج والإضافة للسلة">+</button>`}
+        <div class="card glow-card" data-id="${pid}" style="position:relative;">
+            ${isAdmin ? `<button class="product-delete-btn" data-testid="product-delete-btn-${pid}" onclick="deleteProduct(event, '${pid}')" title="حذف المنتج من المتجر">×</button>` : ''}
+            <div class="card-img${isVoltNew(p) ? ' volt-new-scan-active' : ''}" style="position:relative;" onclick="openProductModal('${pid}')">${isVoltNew(p) ? '<span class="volt-new-tag">جديد</span>' : ''}${p.emoji && String(p.emoji).startsWith('https://') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}                ${p.stock <= 0 ?
+            `<button class="fab-add fab-add--disabled" data-testid="product-add-btn-${pid}" disabled>×</button>` :
+            `<button class="fab-add fab-add--active" id="btn-add-${pid}" data-testid="product-add-btn-${pid}" onclick="event.stopPropagation(); openProductModal('${pid}');" title="عرض المنتج والإضافة للسلة">+</button>`}
             </div>
             <div class="card-body">
                 <span class="card-category">${escapeHtml(p.category)}</span>
-                <h3 class="card-name" onclick="openProductModal('${p.id}')">${escapeHtml(p.name)}</h3>
-                <button class="details-toggle-btn" onclick="event.stopPropagation(); toggleDetailsView('${p.id}');" style="background:none;border:none;color:var(--green);font-size:12px;cursor:pointer;margin-top:5px;text-align:right;font-family:'Cairo',sans-serif;font-weight:bold;">
+                <h3 class="card-name" onclick="openProductModal('${pid}')">${escapeHtml(p.name)}</h3>
+                <button class="details-toggle-btn" onclick="event.stopPropagation(); toggleDetailsView('${pid}');" style="background:none;border:none;color:var(--green);font-size:12px;cursor:pointer;margin-top:5px;text-align:right;font-family:'Cairo',sans-serif;font-weight:bold;">
                     تفاصيل المنتج <span class="volt-details-arrow">▼</span>
                 </button>
-                <div id="pd${p.id}" class="details-panel" style="display:none;font-size:12px;color:var(--text);margin-top:8px;padding:8px;background:var(--dark);border-radius:6px;border-right:2px solid var(--green);">
+                <div id="pd${pid}" class="details-panel" style="display:none;font-size:12px;color:var(--text);margin-top:8px;padding:8px;background:var(--dark);border-radius:6px;border-right:2px solid var(--green);">
                     ${escapeHtml(p.desc)}
                 </div>
                 <div class="card-footer">
@@ -244,6 +340,11 @@ function renderProducts(products) {
     }
 
     c.innerHTML = products.map(p => buildProductCardHTML(p)).join('');
+    // PERF: يحدّث كاش initGlowCardPerformance() بعد أي رندر كامل للشبكة —
+    // إضافي، مش بديل عن أي سطر موجود تحت.
+    if (typeof window.__voltRefreshGlowCards === "function") {
+        window.__voltRefreshGlowCards();
+    }
          if (window.__volt && window.__volt.microAnimations && typeof window.__volt.microAnimations.onProductsRendered === "function") {
         window.__volt.microAnimations.onProductsRendered();
     }
@@ -257,6 +358,11 @@ function appendProductCards(products) {
     const c = document.getElementById("products");
     if (!c || !products.length) return;
     c.insertAdjacentHTML('beforeend', products.map(p => buildProductCardHTML(p)).join(''));
+    // PERF: يحدّث كاش initGlowCardPerformance() بعد إضافة كروت جديدة عبر
+    // infinite scroll — إضافي، مش بديل عن أي سطر موجود تحت.
+    if (typeof window.__voltRefreshGlowCards === "function") {
+        window.__voltRefreshGlowCards();
+    }
     if (window.__volt && window.__volt.microAnimations && typeof window.__volt.microAnimations.onProductsRendered === "function") {
         window.__volt.microAnimations.onProductsRendered();
     }
@@ -351,16 +457,80 @@ async function applyProductFilters() {
     const inp = document.getElementById("searchInput");
     const q = inp ? inp.value.toLowerCase().trim() : "";
 
-    const result = await window.voltFirebase.getProductsPage({
-        category: activeCategory,
-        maxPrice: typeof activePriceMax === "number" ? activePriceMax : null,
-        searchPrefix: q,
-        cursorDoc: null,
-        pageSize: 24
-    });
+    if (!window.voltFirebase || typeof window.voltFirebase.getProductsPage !== "function") {
+        // FIX (race condition): config.js بيتحمّل كـ type="module" وممكن
+        // يستنى شوية قبل ما window.voltFirebase يبقى جاهز، بينما
+        // DOMContentLoaded (اللي بينادي applyProductFilters() أول مرة) ممكن
+        // يفلق قبل كده على نت بطيء. قبل الفكس ده، الحالة دي كانت بترسم
+        // شبكة منتجات فاضية للأبد من غير أي إعادة محاولة — عكس نظام
+        // الفولدرز اللي أصلاً بيستمع لـ voltFirebaseReady (شوف index.html).
+        // بنطبّق نفس النمط هنا: نعرض حالة فاضية مؤقتاً، ونسجّل استماع لمرة
+        // واحدة بس (بحماية voltProductFiltersRetryBound عشان لو العميل
+        // بدّل فلتر أكتر من مرة قبل ما Firebase يجهز، مينفعش يتسجّل أكتر من
+        // مستمع واحد ويتسببوا في نداءات متزامنة متضاربة على نفس حالة
+        // الـ pagination) — فور ما Firebase يجهز فعلياً، applyProductFilters()
+        // بتتنادى تاني وترجع تجيب المنتجات الحقيقية بالفلتر الحالي.
+        renderProducts([]);
+        if (!voltProductFiltersRetryBound) {
+            voltProductFiltersRetryBound = true;
+            window.addEventListener("voltFirebaseReady", () => {
+                voltProductFiltersRetryBound = false;
+                applyProductFilters();
+            }, { once: true });
+        }
+        return;
+    }
+
+    const maxPriceForQuery = typeof activePriceMax === "number" ? activePriceMax : null;
+
+    // PERF: لو نفس تركيبة الفلاتر (تصنيف + سعر + بحث) اتسألت قبل كده في
+    // آخر 60 ثانية في نفس التاب، بنرجّع النتيجة المخزّنة من غير ما نضرب
+    // Firestore تاني. currentPageCursor بيتظبط من result.lastDoc المخزّن
+    // بالظبط زي مسار الشبكة العادي تحت، عشان loadNextProductsPage()
+    // (اللي بتستخدم currentPageCursor ده) تفضل شغالة صح سواء جت النتيجة
+    // من الكاش أو من الشبكة.
+    const cacheKey = _voltGetSearchCacheKey(activeCategory, maxPriceForQuery, q);
+    const cachedEntry = _searchQueryCache.get(cacheKey);
+    if (cachedEntry && (Date.now() - cachedEntry.timestamp) < SEARCH_CACHE_TTL_MS) {
+        currentPageCursor = cachedEntry.lastDoc;
+        currentPageHasMore = cachedEntry.hasMore;
+        renderProducts(cachedEntry.products);
+        saveProducts(cachedEntry.products);
+        return;
+    }
+
+    // PERF FIX (load-test audit): getProductsPageFromFirestore (config.js)
+    // no longer falls back to a silent full-collection scan on failure —
+    // it now throws instead (missing/broken composite index, most
+    // commonly). That's a deliberate fail-fast change on the config.js
+    // side, but it means this call must be guarded here: without this
+    // try/catch, an uncaught rejection at this line would break product
+    // rendering for every visitor the moment the index is unavailable,
+    // instead of the old (slow but non-breaking) full-scan degradation.
+    // This does not change the success path at all — only what happens
+    // if the call rejects.
+    let result;
+    try {
+        result = await window.voltFirebase.getProductsPage({
+            category: activeCategory,
+            maxPrice: maxPriceForQuery,
+            searchPrefix: q,
+            cursorDoc: null,
+            pageSize: 24
+        });
+    } catch (err) {
+        console.error("applyProductFilters: فشل جلب صفحة المنتجات", err);
+        const c = document.getElementById("products");
+        if (c) {
+            c.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--muted);padding:40px;">⚠️ تعذر تحميل المنتجات حالياً. حاول تحديث الصفحة.</p>`;
+        }
+        return;
+    }
 
     currentPageCursor = result.lastDoc;
     currentPageHasMore = result.hasMore;
+
+    _voltCacheSearchResult(cacheKey, { products: result.products, lastDoc: result.lastDoc, hasMore: result.hasMore, timestamp: Date.now() });
 
     renderProducts(result.products);
     saveProducts(result.products);
@@ -378,13 +548,36 @@ async function loadNextProductsPage() {
     const inp = document.getElementById("searchInput");
     const q = inp ? inp.value.toLowerCase().trim() : "";
 
-    const result = await window.voltFirebase.getProductsPage({
-        category: activeCategory,
-        maxPrice: typeof activePriceMax === "number" ? activePriceMax : null,
-        searchPrefix: q,
-        cursorDoc: currentPageCursor,
-        pageSize: 24
-    });
+    if (!window.voltFirebase || typeof window.voltFirebase.getProductsPage !== "function") {
+        showInfiniteScrollLoader(false);
+        isLoadingNextPage = false;
+        return;
+    }
+
+    // PERF FIX (load-test audit): same reasoning as the try/catch added to
+    // applyProductFilters() above — getProductsPageFromFirestore now
+    // throws on failure instead of silently falling back to a full scan.
+    // Guarded here so a failed infinite-scroll page load surfaces a toast
+    // and simply stops loading further pages, rather than throwing an
+    // uncaught rejection out of the IntersectionObserver callback.
+    let result;
+    try {
+        result = await window.voltFirebase.getProductsPage({
+            category: activeCategory,
+            maxPrice: typeof activePriceMax === "number" ? activePriceMax : null,
+            searchPrefix: q,
+            cursorDoc: currentPageCursor,
+            pageSize: 24
+        });
+    } catch (err) {
+        console.error("loadNextProductsPage: فشل جلب الصفحة التالية", err);
+        if (typeof showToast === "function") {
+            showToast("⚠️ تعذر تحميل المزيد من المنتجات، حاول مرة أخرى", "warn");
+        }
+        showInfiniteScrollLoader(false);
+        isLoadingNextPage = false;
+        return;
+    }
 
     currentPageCursor = result.lastDoc;
     currentPageHasMore = result.hasMore;
@@ -456,12 +649,13 @@ async function openProductModal(id) {
     // ده كان هيفشل بصمت (p يبقى undefined) لأي منتج مش موجود في الصفحة
     // المحمّلة حالياً (24 منتج بس). getProductById بتجيب المنتج المطلوب
     // مباشرة من Firestore بغض النظر عن أي صفحة هو فيها.
+    if (!window.voltFirebase || typeof window.voltFirebase.getProductById !== "function") return;
     const p = await window.voltFirebase.getProductById(id);
     if (!p) return;
     const rows = p.specs ? Object.entries(p.specs).map(([k, v], idx) => `<div class="spec-row volt-spec-stagger" style="animation-delay:${idx * 60}ms"><span>${escapeHtml(k)}</span><span>${escapeHtml(v)}</span></div>`).join('') : '';
     const maxQty = (p.stock !== undefined && p.stock > 0) ? p.stock : 1;
     document.getElementById("productPageInnerContent").innerHTML = `
-        <div class="modal-img">${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" decoding="async" style="max-width:120px;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}</div>
+        <div class="modal-img">${p.emoji && String(p.emoji).startsWith('https://') ? `<img src="${escapeHtml(p.emoji)}" loading="lazy" decoding="async" style="max-width:120px;border-radius:8px;">` : escapeHtml(p.emoji || '📦')}</div>
         <div class="modal-info">
             <span class="modal-cat">${escapeHtml(p.category)}</span>
             <h3 class="modal-name">${escapeHtml(p.name)}</h3>
@@ -712,6 +906,7 @@ async function addToCart(event, id) {
     }
     // FIX (pagination): كانت بتجيب كل المنتجات وتدوّر فيهم بـ findIndex —
     // بديل مباشر ورخيص: نجيب المنتج المطلوب بس من Firestore.
+    if (!window.voltFirebase || typeof window.voltFirebase.getProductById !== "function") return;
     const p = await window.voltFirebase.getProductById(id);
     if (!p) return;
 
@@ -733,9 +928,6 @@ async function addToCart(event, id) {
             if (fabBtn) {
                 fabBtn.outerHTML = `<button class="fab-add fab-add--disabled" disabled>×</button>`;
             }
-        }
-        if (window.voltFirebase && typeof window.voltFirebase.updateProduct === "function") {
-            try { window.voltFirebase.updateProduct(String(p.id), { stock: p.stock }); } catch (err) { console.warn("addToCart: فشل تحديث المخزون", err); }
         }
     }
 
@@ -769,14 +961,15 @@ async function addToCart(event, id) {
 }
 
 
+let _voltRemoveQueue = Promise.resolve();
 async function removeFromCart(i) {
-    // === #26: play a leave animation on the specific .cart-item element
-    // BEFORE the state mutation below runs, then wait for it, so the
-    // final cart[]/localStorage/DOM state after this function returns is
-    // identical to before this change — only the visual removal is no
-    // longer instantaneous. Falls back to zero delay if the element can't
-    // be found or prefers-reduced-motion is set, matching every other
-    // reduced-motion guard already used elsewhere in this codebase.
+    _voltRemoveQueue = _voltRemoveQueue.then(() => _removeFromCartInner(i));
+    return _voltRemoveQueue;
+}
+async function _removeFromCartInner(i) {
+    const targetItem = cart[i];
+    if (!targetItem) return;
+
     const reduceMotionCheck = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const removeBtn = document.querySelector(`[data-testid="cart-item-remove-${i}"]`);
     const itemEl = removeBtn ? removeBtn.closest(".cart-item") : null;
@@ -785,21 +978,17 @@ async function removeFromCart(i) {
         await new Promise(resolve => setTimeout(resolve, 280));
     }
 
-    const p = cart[i];
-    // FIX (pagination): كانت بتجيب كل المنتجات وتدوّر فيهم بـ findIndex —
-    // بديل مباشر: نجيب المنتج المطلوب بس من Firestore.
-    const freshProduct = await window.voltFirebase.getProductById(p.id);
+    const currentIndex = cart.indexOf(targetItem);
+    if (currentIndex === -1) return;
+
+    const p = targetItem;
+    const freshProduct = (window.voltFirebase && typeof window.voltFirebase.getProductById === "function")
+        ? await window.voltFirebase.getProductById(p.id) : null;
+
     if (freshProduct) {
         const newStock = (freshProduct.stock || 0) + 1;
         const updatedProduct = { ...freshProduct, stock: newStock };
-        // FIX (pagination): applyProductFilters() الكاملة كانت هتصفّر
-        // الـ pagination مع كل عملية إزالة من السلة — نفس السبب زي
-        // addToCart فوق. بدل كده: تحديث الكاش تراكمياً، وتحديث بصري خفيف
-        // لزرار "+" لو المنتج كان متعطّل بسبب نفاد المخزون ورجع متاح.
         saveProducts([updatedProduct]);
-        if (window.voltFirebase && typeof window.voltFirebase.updateProduct === "function") {
-            try { window.voltFirebase.updateProduct(String(freshProduct.id), { stock: newStock }); } catch (err) { console.warn("removeFromCart: فشل تحديث المخزون", err); }
-        }
         if (newStock > 0) {
             const disabledBtn = document.querySelector(`[data-id="${freshProduct.id}"] .fab-add--disabled`);
             if (disabledBtn) {
@@ -807,7 +996,10 @@ async function removeFromCart(i) {
             }
         }
     }
-    cart.splice(i, 1);
+
+    const finalIndex = cart.indexOf(targetItem);
+    if (finalIndex === -1) return;
+    cart.splice(finalIndex, 1);
     updateCartBadge();
     updateCartUI();
     saveCart();
@@ -846,7 +1038,7 @@ async function updateCartUI() {
         return `
         <div class="cart-item">
             <div class="cart-item-info">
-                <span class="cart-item-emoji">${item.emoji && item.emoji.startsWith('http') ? '📦' : item.emoji}</span>
+                <span class="cart-item-emoji">${item.emoji && String(item.emoji).startsWith('https://') ? '📦' : escapeHtml(item.emoji || '📦')}</span>
                 <div>
                     <div class="cart-item-name">${escapeHtml(item.name)}</div>
                     <div class="cart-item-price">${item.price} EGP</div>
@@ -993,28 +1185,9 @@ async function doLogin() {
         return;
     }
 
-    // نحدّد الإيميل: لو المستخدم كتب إيميل مباشرة نستخدمه، لو كتب رقم
-    // هاتف نبحث عنه في Firestore عن طريق idNum عشان نجيب الإيميل المرتبط.
-    let emailToTry = loginInput.includes("@") ? loginInput : null;
-
-    if (!emailToTry && typeof window.voltFirebase.findUserByIdNum === "function") {
-        try {
-            const byIdNum = await window.voltFirebase.findUserByIdNum(loginInput);
-            if (byIdNum) {
-                if (byIdNum.email && byIdNum.email.includes("@") && byIdNum.email !== "غير محدد") {
-                    emailToTry = byIdNum.email;
-                } else {
-                    const cleanPhone = loginInput.replace(/\D/g, "");
-                    if (cleanPhone) emailToTry = `client_${cleanPhone}@volt.com`;
-                }
-            }
-        } catch (err) {
-            console.error("doLogin: فشل البحث عن المستخدم برقم الهاتف", err);
-        }
-    }
-
+    const emailToTry = loginInput.includes("@") ? loginInput : null;
     if (!emailToTry) {
-        showToast("⚠️ لم يتم العثور على حساب بهذا الرقم أو الإيميل", "error");
+        showToast("⚠️ سجّل الدخول بالبريد الإلكتروني وكلمة المرور", "error");
         return;
     }
 
@@ -1026,7 +1199,7 @@ async function doLogin() {
         }
 
         currentUser = { ...firebaseUser, role: firebaseUser.role || "client" };
-        sessionStorage.setItem("volt_logged_user", JSON.stringify(currentUser));
+        sessionStorage.removeItem("volt_logged_user");
         closeLoginModal();
         updateNavForUser();
 
@@ -1364,7 +1537,7 @@ async function wizSubmit() {
 
     currentUser = newUser;
     currentUser.role = "client";
-    sessionStorage.setItem("volt_logged_user", JSON.stringify(currentUser));
+    sessionStorage.removeItem("volt_logged_user");
 
     closeRegisterModal();
     updateNavForUser();
@@ -1565,6 +1738,12 @@ function choosePayment(method) {
     let total = cart.reduce((sum, item) => sum + item.price, 0);
     const isGuest = !currentUser;
 
+    if (isGuest) {
+        showToast("يجب تسجيل الدخول لإتمام الطلب", "warn");
+        openLoginModal();
+        return;
+    }
+
     // FIX: الزائر لازم يملأ بياناته الأساسية قبل ما نكمل لأي مسار دفع —
     // بدون رقم/اسم/عنوان مفيش طريقة نبعت رسالة الواتساب أو نعرض "التوصيل
     // إلى" صح. التحقق بيحصل هنا (قبل أي فرع تاني) عشان يوقف الزائر بدري
@@ -1617,6 +1796,10 @@ function choosePayment(method) {
 // الزائر شكله في نافذة الواتساب بس. processFinalOrder() الأصلية فضلت
 // زي ما هي تمامًا لمسار العميل المسجل، من غير أي تعديل عليها.
 async function processGuestOrder(method) {
+    showToast("يجب تسجيل الدخول لإتمام الطلب", "warn");
+    openLoginModal();
+    return;
+
     document.getElementById("payment-modal").style.display = "none";
     const guestData = window.__voltGuestOrderData;
     if (!guestData) {
@@ -1679,100 +1862,118 @@ async function processGuestOrder(method) {
     window.__voltGuestOrderData = null; // تنظيف بعد الاستخدام
 }
 
+// SECURITY (functions/index.js pairing): generates a client-side
+// idempotency key so a duplicate/retried createSecureOrder call (double
+// network retry, accidental resubmit, etc.) resolves to the SAME order
+// server-side instead of creating two. This is the client half of a
+// two-sided contract — functions/index.js's createSecureOrder is what
+// actually enforces it (checks this key inside the same Firestore
+// transaction that creates the order, using transaction.create() on an
+// idempotencyKeys/{key} doc, which fails atomically if the key was
+// already used — see that file for the enforcement side).
+//
+// Logic matches generateIdempotencyKey() in api-response.js (Api_response
+// in the project) exactly, but is defined directly here rather than
+// imported from that file: api-response.js uses `export function ...`
+// (ES module syntax), while script.js is loaded as a plain classic
+// script in index.html (`<script src="script.js" defer>`, no
+// type="module") — an ES `import` statement there would throw a
+// SyntaxError and break this entire file from loading at all. This
+// function has zero Firebase/module dependency (just crypto/Date), so
+// duplicating these three lines directly here avoids that hazard
+// entirely rather than restructuring script.js's load type project-wide
+// for one small helper.
+function voltGenerateIdempotencyKey() {
+    const rand = (typeof crypto !== "undefined" && crypto.getRandomValues)
+        ? Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(16).padStart(2, "0")).join("")
+        : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    return `idem_${Date.now()}_${rand}`;
+}
+
 async function processFinalOrder(method) {
+    if (!currentUser || !currentUser.uid) {
+        showToast("يجب تسجيل الدخول لإتمام الشراء", "error");
+        return;
+    }
+    if (!window.voltFirebase || typeof window.voltFirebase.createSecureOrder !== "function") {
+        showToast("النظام غير جاهز لإتمام الطلب", "error");
+        return;
+    }
+    if (window.__voltOrderLock) return;
+    window.__voltOrderLock = true;
+    _voltOrderLockTimeoutId = setTimeout(() => { window.__voltOrderLock = false; showToast("⚠️ استغرق الطلب وقتاً طويلاً — حاول مرة أخرى", "warn"); }, ORDER_LOCK_TIMEOUT_MS);
+
     document.getElementById("payment-modal").style.display = "none";
-    let methodText = method === 'cash' ? "كاش عند الاستلام" : (method === 'pending-deposit' ? "كاش (بانتظار تحويل الديبوزت)" : "إنستاباي كامل");
-// --- حساب الإجمالي النهائي (مع التحقق من كود الخصم) ---
-    // FIX: originalTotal is still summed from cart[].price, which comes
-    // from localStorage-held product data — this file cannot close that
-    // exposure without a backend, since it has no independent price source
-    // to check against. Flagging clearly rather than implying this is
-    // fixed: the order total computed here MUST be re-verified against
-    // your Supabase product table before an order is accepted / paid,
-    // otherwise a shopper who edited volt_products in localStorage still
-    // gets whatever price they set, promo code aside.
-    let originalTotal = cart.reduce((sum, item) => sum + item.price, 0);
-    let total = originalTotal; // ده السعر اللي هيتبعت للأدمن
-    let appliedPromoLabel = "";
+    const safeMethod = method === "cash" || method === "pending-deposit" || method === "instapay" ? method : "instapay";
+    const methodText = safeMethod === "cash" ? "كاش عند الاستلام" : (safeMethod === "pending-deposit" ? "كاش (بانتظار تحويل الديبوزت)" : "إنستاباي كامل");
+    const comment = document.getElementById("orderComment") ? document.getElementById("orderComment").value.trim().slice(0, 1000) : "";
+    const appliedCode = typeof window.getCurrentPromoCode === "function" ? window.getCurrentPromoCode() : "";
 
-    // FIX: previously called window.PromoEngine.validatePromoCode(...)
-    // directly on window.currentPromoCode (a forgeable global) against a
-    // client-visible PROMO_CODES table. Now reads the applied code via
-    // cart-promo.js's read-only getter and asks it to re-validate the
-    // discount against the Edge Function rather than recomputing locally.
-    const appliedCode = typeof window.getCurrentPromoCode === "function"
-        ? window.getCurrentPromoCode()
-        : "";
-    if (appliedCode && typeof window.getPromoDiscountForTotal === "function") {
-        const discountAmount = await window.getPromoDiscountForTotal(originalTotal);
-        if (discountAmount > 0) {
-            total = Math.max(0, originalTotal - discountAmount);
-            appliedPromoLabel = ` (تم استخدام كود: ${appliedCode})`;
-        }
+    const qtyMap = new Map();
+    for (const item of cart) {
+        const pid = String(item.id || "");
+        if (!pid) continue;
+        qtyMap.set(pid, (qtyMap.get(pid) || 0) + 1);
     }
-    // -----------------------------------------------------
+    const items = Array.from(qtyMap.entries()).map(([productId, quantity]) => ({ productId, quantity }));
 
-    const comment = document.getElementById("orderComment") ? document.getElementById("orderComment").value.trim() : "لا توجد ملاحظات";
+    // SECURITY: reuse the SAME key if one is already pending from an
+    // earlier failed/retried attempt in this checkout (see the variable's
+    // own comment above) — only generate a new one if none exists yet.
+    if (!_voltCurrentOrderIdempotencyKey) {
+        _voltCurrentOrderIdempotencyKey = getOrderIdempotencyKey() || voltGenerateIdempotencyKey();
+        setOrderIdempotencyKey(_voltCurrentOrderIdempotencyKey);
+    }
 
-    // إضافة ملاحظة لو استخدم كود خصم
-    const finalComment = appliedPromoLabel ? comment + appliedPromoLabel : comment;
+    let result;
+    try {
+        result = await window.voltFirebase.createSecureOrder({
+            items,
+            promoCode: appliedCode || null,
+            customer: {
+                name: currentUser.name,
+                phone: currentUser.phone,
+                address: currentUser.address,
+                code: currentUser.code
+            },
+            comment,
+            method: safeMethod,
+            idempotencyKey: _voltCurrentOrderIdempotencyKey
+        });
+    } catch (err) {
+        window.__voltOrderLock = false;
+        if (_voltOrderLockTimeoutId) { clearTimeout(_voltOrderLockTimeoutId); _voltOrderLockTimeoutId = null; }
+        document.getElementById("payment-modal").style.display = "flex";
+        const msg = (err && err.message) ? String(err.message) : "فشل إتمام الطلب";
+        showToast(msg, "error");
+        return;
+    }
 
+    if (!result || !result.orderId) {
+        window.__voltOrderLock = false;
+        if (_voltOrderLockTimeoutId) { clearTimeout(_voltOrderLockTimeoutId); _voltOrderLockTimeoutId = null; }
+        document.getElementById("payment-modal").style.display = "flex";
+        showToast("فشل إتمام الطلب", "error");
+        return;
+    }
+
+    const total = Number(result.total) || 0;
     const newOrder = {
-        orderId: "VOLT-OR-" + Math.floor(Math.random() * 900000 + 100000),
-        date: new Date().toLocaleString("ar-EG"),
-        createdAt: new Date().toISOString(),
-        customer: {
-            name: currentUser.name,
-            phone: currentUser.phone,
-            address: currentUser.address,
-            code: currentUser.code,
-            uid: currentUser.uid || null
-        },
-        items: cart.map(i => ({ productId: i.id, name: i.name, price: i.price, emoji: i.emoji })),
-        total: total,
-        comment: finalComment,
+        orderId: result.orderId,
+        id: result.firestoreId,
+        total,
         method: methodText,
-        status: method === 'pending-deposit' ? "معلق بانتظار العربون" : "قيد المراجعة",
-        uid: currentUser.uid || null
+        status: safeMethod === "pending-deposit" ? "معلق بانتظار العربون" : "قيد المراجعة"
     };
-
-    // --- حفظ في Firestore أولاً لو متاح ---
-    let firestoreOrderId = null;
-    if (window.voltFirebase && typeof window.voltFirebase.saveOrder === "function") {
-        try {
-            firestoreOrderId = await window.voltFirebase.saveOrder(newOrder);
-            if (firestoreOrderId) newOrder.id = firestoreOrderId;
-        } catch (err) {
-            console.warn("processFinalOrder: فشل حفظ الأوردر في Firestore", err);
-        }
-    }
 
     const orders = getOrders();
     orders.push(newOrder);
-    saveOrders(orders);// تحديث تاريخ المستخدم في Firestore + localStorage
-    let updatedHistory = (currentUser.history || []);
-    updatedHistory.push(newOrder);
-    currentUser.history = updatedHistory;
-    sessionStorage.setItem("volt_logged_user", JSON.stringify(currentUser));
+    saveOrders(orders);
+    sessionStorage.removeItem("volt_logged_user");
 
-    if (currentUser.uid && window.voltFirebase && typeof window.voltFirebase.saveUserProfile === "function") {
-        try {
-            await window.voltFirebase.saveUserProfile(currentUser.uid, { history: updatedHistory });
-        } catch (err) {
-            console.warn("processFinalOrder: فشل تحديث بروفايل المستخدم", err);
-        }
-    }
-
-    const users = getUsers();
-    const uIndex = users.findIndex(u => u.code === currentUser.code);
-    if (uIndex !== -1) {
-        users[uIndex].history = updatedHistory;
-        saveUsers(users);
-    }
-
-    let isPending = method === 'pending-deposit';
-    let deposit = Math.ceil(total * 0.3);
-    let successMessage = isPending
+    const isPending = safeMethod === "pending-deposit";
+    const deposit = Math.ceil(total * 0.3);
+    const successMessage = isPending
         ? `<div class="success-icon" style="color:var(--amber); font-size:60px; margin-bottom:15px;">⏳</div>
            <h3 style="font-family:'Rajdhani',sans-serif; color:var(--amber); font-size:24px; margin-bottom:10px;">طلبك قيد المراجعة!</h3>
            <p style="color:var(--muted); font-size:14px; margin-bottom:15px; line-height: 1.6;">
@@ -1784,27 +1985,23 @@ async function processFinalOrder(method) {
     document.getElementById("successContent").innerHTML = `
         ${successMessage}
         <div style="background:#0e140e; border:1px solid var(--border); padding:10px; border-radius:8px; margin-bottom:15px; text-align:right;">
-            <p style="color:var(--muted); margin-bottom:8px; font-size:13px;">رقم الطلب: <strong style="color:var(--green)">${newOrder.orderId}</strong></p>
+            <p style="color:var(--muted); margin-bottom:8px; font-size:13px;">رقم الطلب: <strong style="color:var(--green)">${escapeHtml(result.orderId)}</strong></p>
             <p style="color:var(--muted); margin-bottom:8px; font-size:13px;">طريقة الدفع: <strong style="color:#fff">${methodText}</strong></p>
             <p style="color:var(--muted); font-size:13px;">سيتم التوصيل إلى العنوان المثبت للعميل يدوياً.</p>
         </div>
-        <a class="wa-btn" href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('مرحباً فولت، قمت بإرسال أوردر جديد رقم: ' + newOrder.orderId + ' بمبلغ ' + total + ' ج.م للاستلام في: ' + currentUser.address)}" target="_blank" style="display:flex; align-items:center; justify-content:center; gap:8px; background:#1db954; color:black; padding:12px; border-radius:8px; text-decoration:none; font-weight:bold; margin-bottom:10px;">💬 تواصل عبر الواتساب للمتابعة الفورية</a>
+        <a class="wa-btn" href="https://wa.me/${WA_NUMBER}?text=${encodeURIComponent('مرحباً فولت، قمت بإرسال أوردر جديد رقم: ' + result.orderId + ' بمبلغ ' + total + ' ج.م للاستلام في: ' + (currentUser.address || ''))}" target="_blank" rel="noopener" style="display:flex; align-items:center; justify-content:center; gap:8px; background:#1db954; color:black; padding:12px; border-radius:8px; text-decoration:none; font-weight:bold; margin-bottom:10px;">💬 تواصل عبر الواتساب للمتابعة الفورية</a>
         <button class="btn-primary" style="width:100%;" onclick="closeSuccessAndClear()">العودة للمتجر</button>
     `;
     document.getElementById("success-modal").classList.add("open");
-
-    // FIX: trackPurchase()/trackMetaPurchase() were defined (see ANALYTICS
-    // section near the end of this file) but never called anywhere — every
-    // other funnel step (add_to_cart, begin_checkout) fired correctly, but
-    // the actual purchase event never reached GA4 or Meta Pixel. Wired in
-    // here, at order-submission success, same point trackBeginCheckout()
-    // already fires from in handleCheckout(). Note this fires when the
-    // order is SUBMITTED for review (status "قيد المراجعة" /
-    // "معلق بانتظار العربون" above), not when payment is confirmed
-    // received — consistent with how begin_checkout is already scoped in
-    // this file, not a new assumption introduced here.
-    trackPurchase(newOrder.orderId, cart, total);
-    trackMetaPurchase(newOrder.orderId, cart, total);
+    window.__voltOrderLock = false;
+    if (_voltOrderLockTimeoutId) { clearTimeout(_voltOrderLockTimeoutId); _voltOrderLockTimeoutId = null; }
+    // SECURITY: order confirmed — clear the key so the NEXT checkout
+    // (a genuinely separate order later) generates its own fresh key
+    // rather than reusing this completed order's key.
+    _voltCurrentOrderIdempotencyKey = null;
+    clearOrderIdempotencyKey();
+    trackPurchase(result.orderId, cart, total);
+    trackMetaPurchase(result.orderId, cart, total);
 }
 
 function resetPaymentModal() { const payBox = document.querySelector(".payment-box"); if (payBox && payBox.dataset.originalHtml) payBox.innerHTML = payBox.dataset.originalHtml; }
@@ -2109,36 +2306,33 @@ async function renderAdminOrders() {
 
 async function changeOrderStatus(idx, newStatus) {
     const orders = getOrders() || [];
-    if (!orders[idx]) return;
-    orders[idx].status = newStatus;
-
-    if (orders[idx].id && window.voltFirebase && typeof window.voltFirebase.updateOrder === "function") {
-        try { await window.voltFirebase.updateOrder(orders[idx].id, { status: newStatus }); } catch (err) { }
+    const orderId = orders[idx] && orders[idx].id;
+    if (!orderId || !window.voltFirebase || typeof window.voltFirebase.updateOrder !== "function") {
+        showToast("تعذر تحديد الطلب", "error");
+        return;
+    }
+    try {
+        const ok = await window.voltFirebase.updateOrder(orderId, { status: newStatus });
+        if (!ok) throw new Error("Order update failed");
+    } catch (err) {
+        console.warn("changeOrderStatus: failed to update order", err);
+        showToast("فشل تحديث حالة الطلب", "error");
+        return;
     }
 
-    saveOrders(orders);
+    const currentOrders = getOrders() || [];
+    const order = currentOrders.find(item => item.id === orderId);
+    if (!order) return;
+    order.status = newStatus;
+
+    saveOrders(currentOrders);
     await renderAdminOrders();
     showToast("تم تحديث حالة الطلب بنجاح", "green");
 }
 
 // حذف الأوردر عند التوصيل والاستلام يدوياً مع إظهار الرسالة المطلوبة
 async function deliverAndRemoveOrder(idx) {
-    let orders = getOrders() || [];
-    const removedOrder = orders[idx];
-    if (!removedOrder) return;
-
-    if (removedOrder.id && window.voltFirebase && typeof window.voltFirebase.deleteOrder === "function") {
-        try { await window.voltFirebase.deleteOrder(removedOrder.id); } catch (err) { }
-    }
-
-    // مسح يدوي من خانة الأوردرات
-    orders.splice(idx, 1);
-    saveOrders(orders);
-    await renderAdminOrders();
-
-    // إظهار الرسالة الكلية التي طلبتها في التوست والمودال للتأكيد
-    alert("تم تسليم الأوردر ليا بنجاح الحذف اليدوي ✓");
-    showToast("تم تسليم الأوردر ليا", "green");
+    await changeOrderStatus(idx, "تم التسليم");
 }
 // 2. عرض كشوفات حسابات وبيانات العملاء بالكامل (بما فيها الباسوردات والعناوين والكل)
 async function renderAdminUsers() {
@@ -2188,15 +2382,17 @@ async function deleteUserAccount(uid, userName) {
     if (!uid) { showToast("تعذر تحديد حساب العميل", "error"); return; }
     if (!confirm(`هل أنت متأكد من حذف حساب "${userName}" نهائياً؟\n\nسيتم حذف بيانات العميل من قاعدة البيانات.`)) return;
 
-    if (window.voltFirebase && typeof window.voltFirebase.deleteUser === "function") {
-        try {
-            const ok = await window.voltFirebase.deleteUser(uid);
-            if (!ok) { showToast("فشل حذف الحساب من Firestore", "error"); return; }
-        } catch (err) {
-            console.warn("deleteUserAccount: فشل الحذف من Firestore", err);
-            showToast("فشل حذف الحساب — تحقق من الاتصال", "error");
-            return;
-        }
+    if (!window.voltFirebase || typeof window.voltFirebase.deleteUser !== "function") {
+        showToast("النظام غير جاهز لحذف الحساب", "error");
+        return;
+    }
+    try {
+        const ok = await window.voltFirebase.deleteUser(uid);
+        if (!ok) { showToast("فشل حذف الحساب", "error"); return; }
+    } catch (err) {
+        console.warn("deleteUserAccount: secure deletion failed", err);
+        showToast("فشل حذف الحساب — تحقق من الاتصال", "error");
+        return;
     }
 
     const users = (getUsers() || []).filter(u => (u.uid || u.id) !== uid);
@@ -2240,13 +2436,65 @@ function initLightning() {
         } requestAnimationFrame(loop);
     }; loop();
 }
+// PERF: كانت querySelectorAll(".glow-card") بتتنفذ جوه mousemove handler
+// نفسه — mousemove بيطلق عشرات المرات في الثانية، وكل مرة كانت بتعمل full
+// DOM query (traversal) من غير أي داعي، لأن قائمة الكروت نفسها بتتغيّر بس
+// وقت الرندر (renderProducts/appendProductCards)، مش مع كل حركة ماوس.
+// الحل: كاش للـ NodeList بيتحدّث بس وقت الرندر الفعلي (عن طريق
+// __voltRefreshGlowCards المُصدّرة تحت — بتتنادى من renderProducts() و
+// appendProductCards() إضافياً)، وrequestAnimationFrame بيمنع تنفيذ الكتابة
+// على DOM (getBoundingClientRect + setProperty، اللي بيسببوا layout
+// thrashing لو اتنفذوا مرات كتير في نفس الفريم) أكتر من مرة لكل فريم رسم.
+// الـ custom properties (--mx/--my) والقيم اللي بتتحسب زي ما هي بالظبط —
+// بس وقت وتكرار التنفيذ هما اللي اتغيّروا.
+// PERF FIX (load-test audit): the previous version called
+// card.getBoundingClientRect() for every visible card on every animation
+// frame while the mouse moved anywhere on the page. getBoundingClientRect()
+// forces a synchronous layout read — correctly batched to once per rAF
+// frame rather than once per mousemove event, but still N layout reads per
+// frame (N = number of visible glow-cards), for the entire duration of any
+// mouse movement. This version adds a second cache layer (cachedRects) on
+// top of the existing cachedCards NodeList cache: rects are computed once
+// and reused across frames, and only recomputed when something that could
+// actually change a card's position happens — a scroll, a resize, or a
+// fresh render (refreshGlowCardsCache(), already called by renderProducts()/
+// appendProductCards() elsewhere in this file). The custom properties
+// (--mx/--my) and the values written to them are computed exactly as
+// before — only when getBoundingClientRect() itself is called has changed.
 function initGlowCardPerformance() {
+    let cachedCards = null;
+    let cachedRects = null;
+    let rafPending = false;
+    let lastEvent = null;
+
+    function refreshGlowCardsCache() {
+        cachedCards = document.querySelectorAll(".glow-card");
+        cachedRects = null;
+    }
+    refreshGlowCardsCache();
+
+    function ensureRects() {
+        if (cachedRects) return;
+        cachedRects = Array.from(cachedCards).map(card => ({ card, rect: card.getBoundingClientRect() }));
+    }
+
+    window.__voltRefreshGlowCards = refreshGlowCardsCache;
+    window.addEventListener("scroll", () => { cachedRects = null; }, { passive: true });
+    window.addEventListener("resize", () => { cachedRects = null; }, { passive: true });
+
     document.addEventListener("mousemove", e => {
-        const cards = document.querySelectorAll(".glow-card");
-        cards.forEach(card => {
-            const rect = card.getBoundingClientRect();
-            const x = e.clientX - rect.left, y = e.clientY - rect.top;
-            card.style.setProperty("--mx", `${x}px`); card.style.setProperty("--my", `${y}px`);
+        lastEvent = e;
+        if (rafPending) return;
+        rafPending = true;
+        requestAnimationFrame(() => {
+            rafPending = false;
+            if (!cachedCards || !lastEvent) return;
+            ensureRects();
+            cachedRects.forEach(({ card, rect }) => {
+                const x = lastEvent.clientX - rect.left, y = lastEvent.clientY - rect.top;
+                card.style.setProperty("--mx", `${x}px`);
+                card.style.setProperty("--my", `${y}px`);
+            });
         });
     });
 } function showToast(msg, type = "info") {
@@ -2596,6 +2844,8 @@ window.renderPromoTable = function () {
                 style="padding:9px; background:#1a1a1a; border:1px solid #444; color:#fff; border-radius:6px; font-family:'Cairo',sans-serif;">
             <input id="newPromoMin" placeholder="الحد الأدنى للطلب (EGP)" type="number" min="0"
                 style="padding:9px; background:#1a1a1a; border:1px solid #444; color:#fff; border-radius:6px; font-family:'Cairo',sans-serif;">
+            <input id="newPromoMaxUses" placeholder="الحد الأقصى للاستخدام (اختياري)" type="number" min="1" step="1"
+                style="padding:9px; background:#1a1a1a; border:1px solid #444; color:#fff; border-radius:6px; font-family:'Cairo',sans-serif;">
         </div>
         <button onclick="addNewPromoCode()" 
             style="width:100%; background:#1db954; color:#000; border:none; padding:10px; border-radius:6px; font-family:'Cairo',sans-serif; font-weight:bold; font-size:14px; cursor:pointer;">
@@ -2684,7 +2934,6 @@ function trackGA4Event(eventName, eventData = {}) {
     
     try {
         gtag('event', eventName, eventData);
-        console.log('✅ GA4 Event:', eventName, eventData);
     } catch (err) {
         console.error('GA4 error:', err);
     }
@@ -2759,7 +3008,6 @@ function trackMetaPixelEvent(eventName, eventData = {}) {
     
     try {
         fbq('track', eventName, eventData);
-        console.log('✅ Meta Pixel Event:', eventName, eventData);
     } catch (err) {
         console.error('Meta Pixel error:', err);
     }
@@ -2805,7 +3053,6 @@ async function logFirebaseAnalytics(eventName, eventData = {}) {
         // Firestore write in this file already goes through
         // window.voltFirebase rather than touching the SDK directly.
         if (!window.voltFirebase || typeof window.voltFirebase.logAnalyticsEvent !== "function") {
-            console.warn('Firebase not ready');
             return;
         }
 
@@ -2819,8 +3066,6 @@ async function logFirebaseAnalytics(eventName, eventData = {}) {
             url: window.location.href,
             referrer: document.referrer
         });
-
-        console.log('✅ Firebase Analytics:', eventName);
     } catch (err) {
         console.error('Firebase analytics error:', err);
     }
@@ -2832,7 +3077,6 @@ async function logFirebaseAnalytics(eventName, eventData = {}) {
 
 async function sendWhatsAppNotification(phone, message) {
     if (!ANALYTICS_CONFIG.whatsappNotificationsEnabled) {
-        console.log('WhatsApp notifications disabled');
         return;
     }
     
@@ -2847,7 +3091,6 @@ async function sendWhatsAppNotification(phone, message) {
         });
         
         if (response.ok) {
-            console.log('✅ WhatsApp sent');
             return await response.json();
         }
     } catch (err) {
@@ -2874,7 +3117,6 @@ async function notifyOrderConfirmation(phone, orderId, total) {
 
 async function sendEmailNotification(email, orderId, cartItems, totalValue) {
     if (!ANALYTICS_CONFIG.emailNotificationsEnabled) {
-        console.log('Email notifications disabled');
         return;
     }
     
@@ -2893,7 +3135,6 @@ async function sendEmailNotification(email, orderId, cartItems, totalValue) {
         });
         
         if (response.ok) {
-            console.log('✅ Email sent');
             return await response.json();
         }
     } catch (err) {
@@ -2918,8 +3159,6 @@ async function completeOrderWithTracking(orderId, customerPhone, customerEmail, 
     
     await notifyOrderConfirmation(customerPhone, orderId, totalAmount);
     await sendEmailNotification(customerEmail, orderId, cartItems, totalAmount);
-    
-    console.log('✅ Order tracking complete:', orderId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2941,17 +3180,18 @@ window.VoltAnalytics = {
     sendEmailNotification
 };
 
-console.log('✅ VOLT Analytics Module Loaded');
-// ── إضافة كود جديد ──
 window.addNewPromoCode = function () {
     const code = document.getElementById("newPromoCode").value.trim().toUpperCase();
     const type = document.getElementById("newPromoType").value;
     const value = parseFloat(document.getElementById("newPromoValue").value) || 0;
     const minOrder = parseFloat(document.getElementById("newPromoMin").value) || 0;
+    const maxUsesInput = document.getElementById("newPromoMaxUses").value.trim();
+    const maxUses = maxUsesInput === "" ? null : Number(maxUsesInput);
     const msg = document.getElementById("promoAddMsg");
 
     if (!code) { msg.style.color = "#ff4444"; msg.textContent = "⚠️ أدخل الكود أولاً"; return; }
     if (!/^[A-Z0-9_-]{1,32}$/.test(code)) { msg.style.color = "#ff4444"; msg.textContent = "⚠️ الكود يحتوي على رموز غير مقبولة"; return; }
+    if (maxUses !== null && (!Number.isInteger(maxUses) || maxUses < 1)) { msg.style.color = "#ff4444"; msg.textContent = "⚠️ الحد الأقصى للاستخدام غير صالح"; return; }
 
     const exists = window.PromoEngine.PROMO_CODES.find(c => c.code === code);
     if (exists) { msg.style.color = "#ff4444"; msg.textContent = "⚠️ الكود موجود بالفعل"; return; }
@@ -2964,6 +3204,7 @@ window.addNewPromoCode = function () {
         fixedAmount: type === "fixed" ? value : 0,
         shippingDiscount: type === "free_shipping",
         minOrder,
+        maxUses,
         maxDiscount: type === "percentage" ? 500 : 0,
         status: "active"
     };
@@ -2980,7 +3221,16 @@ window.addNewPromoCode = function () {
 window.deletePromoCode = async function (code) {
     if (!confirm("هل أنت متأكد من حذف كود " + code + "؟")) return;
     if (window.voltFirebase && typeof window.voltFirebase.deletePromoCode === "function") {
-        try { await window.voltFirebase.deletePromoCode(code); } catch (e) { }
+        try {
+            const ok = await window.voltFirebase.deletePromoCode(code);
+            if (!ok) throw new Error("Promo deletion failed");
+        } catch (e) {
+            showToast("فشل حذف كود الخصم", "error");
+            return;
+        }
+    } else {
+        showToast("النظام غير جاهز لحذف كود الخصم", "error");
+        return;
     }
     window.PromoEngine.PROMO_CODES = window.PromoEngine.PROMO_CODES.filter(c => c.code !== code);
     await window.PromoEngine.persist();

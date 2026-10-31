@@ -1,0 +1,124 @@
+/* ==========================================================================
+   api-response.js — uniform HTTP-style response envelope for Firestore /
+   Callable results. Purely additive: nothing existing imports or requires
+   this today, so introducing it breaks nothing by itself. config.js and
+   order-verify.js are updated separately to add *Envelope siblings that
+   use it, alongside their original, untouched functions.
+
+   Contract:
+     ok(data, status?)        -> { ok: true,  status, data, error: null }
+     fail(status, message, code?) -> { ok: false, status, data: null, error: { message, code } }
+     mapFirebaseError(err)    -> fail(...) with a SAFE, fixed message —
+                                 never forwards err.message or err.stack.
+   ========================================================================== */
+
+export const HTTP_STATUS = Object.freeze({
+    OK: 200,
+    CREATED: 201,
+    BAD_REQUEST: 400,
+    UNAUTHORIZED: 401,
+    FORBIDDEN: 403,
+    NOT_FOUND: 404,
+    UNPROCESSABLE: 422,
+    INTERNAL: 500
+});
+
+export function ok(data, status = HTTP_STATUS.OK) {
+    return { ok: true, status, data, error: null };
+}
+
+export function fail(status, message, code = null) {
+    return { ok: false, status, data: null, error: { message, code } };
+}
+
+// Firebase/Firestore/Auth/Callable error code -> [HTTP status, safe Arabic
+// message]. This is the ONLY place allowed to look at err.code — the
+// resulting message is always one of these fixed strings, never err.message.
+const FIREBASE_ERROR_MAP = {
+    // Firestore
+    "permission-denied": [HTTP_STATUS.FORBIDDEN, "ليس لديك صلاحية لتنفيذ هذا الإجراء"],
+    "unauthenticated": [HTTP_STATUS.UNAUTHORIZED, "يجب تسجيل الدخول أولاً"],
+    "not-found": [HTTP_STATUS.NOT_FOUND, "العنصر المطلوب غير موجود"],
+    "invalid-argument": [HTTP_STATUS.UNPROCESSABLE, "البيانات المرسلة غير صحيحة"],
+    "already-exists": [HTTP_STATUS.UNPROCESSABLE, "العنصر موجود بالفعل"],
+    "resource-exhausted": [HTTP_STATUS.BAD_REQUEST, "تم تجاوز الحد المسموح، حاول لاحقاً"],
+    "unavailable": [HTTP_STATUS.INTERNAL, "الخدمة غير متاحة حالياً، حاول مرة أخرى"],
+    "deadline-exceeded": [HTTP_STATUS.INTERNAL, "استغرق الطلب وقتاً طويلاً، حاول مرة أخرى"],
+    "cancelled": [HTTP_STATUS.INTERNAL, "تم إلغاء الطلب، حاول مرة أخرى"],
+    "aborted": [HTTP_STATUS.INTERNAL, "تعذر إتمام العملية، حاول مرة أخرى"],
+    "failed-precondition": [HTTP_STATUS.UNPROCESSABLE, "لا يمكن تنفيذ هذا الإجراء حالياً"],
+    "out-of-range": [HTTP_STATUS.UNPROCESSABLE, "البيانات المرسلة خارج النطاق المسموح"],
+    "internal": [HTTP_STATUS.INTERNAL, "حدث خطأ داخلي، حاول مرة أخرى"],
+    "data-loss": [HTTP_STATUS.INTERNAL, "حدث خطأ في البيانات، حاول مرة أخرى"],
+
+    // Callable-specific (httpsCallable errors carry these same codes,
+    // sometimes prefixed "functions/" depending on SDK version — both
+    // forms are mapped below).
+    "functions/unauthenticated": [HTTP_STATUS.UNAUTHORIZED, "يجب تسجيل الدخول أولاً"],
+    "functions/permission-denied": [HTTP_STATUS.FORBIDDEN, "ليس لديك صلاحية لتنفيذ هذا الإجراء"],
+    "functions/invalid-argument": [HTTP_STATUS.UNPROCESSABLE, "البيانات المرسلة غير صحيحة"],
+    "functions/resource-exhausted": [HTTP_STATUS.BAD_REQUEST, "تم تجاوز الحد المسموح، حاول لاحقاً"],
+    "functions/not-found": [HTTP_STATUS.NOT_FOUND, "العنصر المطلوب غير موجود"],
+    "functions/already-exists": [HTTP_STATUS.UNPROCESSABLE, "العنصر موجود بالفعل"],
+    "functions/failed-precondition": [HTTP_STATUS.UNPROCESSABLE, "لا يمكن تنفيذ هذا الإجراء حالياً"],
+    "functions/internal": [HTTP_STATUS.INTERNAL, "حدث خطأ داخلي، حاول مرة أخرى"],
+    "functions/unavailable": [HTTP_STATUS.INTERNAL, "الخدمة غير متاحة حالياً، حاول مرة أخرى"],
+    "functions/deadline-exceeded": [HTTP_STATUS.INTERNAL, "استغرق الطلب وقتاً طويلاً، حاول مرة أخرى"],
+
+    // Auth
+    "auth/email-already-in-use": [HTTP_STATUS.UNPROCESSABLE, "البريد الإلكتروني مستخدم بالفعل"],
+    "auth/invalid-email": [HTTP_STATUS.UNPROCESSABLE, "صيغة البريد الإلكتروني غير صحيحة"],
+    "auth/weak-password": [HTTP_STATUS.UNPROCESSABLE, "كلمة المرور ضعيفة جداً"],
+    "auth/user-not-found": [HTTP_STATUS.UNAUTHORIZED, "بيانات الدخول غير صحيحة"],
+    "auth/wrong-password": [HTTP_STATUS.UNAUTHORIZED, "بيانات الدخول غير صحيحة"],
+    "auth/invalid-credential": [HTTP_STATUS.UNAUTHORIZED, "بيانات الدخول غير صحيحة"],
+    "auth/too-many-requests": [HTTP_STATUS.BAD_REQUEST, "محاولات كثيرة جداً، حاول لاحقاً"],
+    "auth/network-request-failed": [HTTP_STATUS.INTERNAL, "تعذر الاتصال بالشبكة، تحقق من اتصالك"],
+    "auth/user-disabled": [HTTP_STATUS.FORBIDDEN, "هذا الحساب معطل، تواصل مع الدعم"]
+};
+
+/**
+ * Maps ANY thrown Firebase/Firestore/Auth/Callable error to a safe,
+ * standardized fail() envelope. This is the single required chokepoint:
+ * every catch block in this codebase that wraps a Firebase call should
+ * route the caught error through this function instead of reading
+ * err.message directly.
+ *
+ * Full error detail (code, message, stack) is logged to console for
+ * developer/ops visibility — it is NEVER included in the returned
+ * envelope, so it can never reach a toast, alert, or rendered DOM node.
+ */
+export function mapFirebaseError(err, context) {
+    const code = err && (err.code || err.name);
+    const mapped = code ? FIREBASE_ERROR_MAP[code] : null;
+
+    if (mapped) {
+        // eslint-disable-next-line no-console
+        console.error(`[${context || "mapFirebaseError"}]`, code, err);
+        return fail(mapped[0], mapped[1], code);
+    }
+
+    // Unknown/unmapped error code — log full detail server/console-side
+    // only. Client-facing message stays generic; code field carries
+    // whatever code we did get (may be null) purely for log correlation,
+    // never rendered to the user by any call site in this codebase.
+    // eslint-disable-next-line no-console
+    console.error(`[${context || "mapFirebaseError"}] unmapped error`, code, err);
+    return fail(HTTP_STATUS.INTERNAL, "حدث خطأ غير متوقع، حاول مرة أخرى", code || "unknown");
+}
+
+/**
+ * Generates a client-side idempotency key: timestamp + random suffix.
+ * NOTE: this key only prevents duplicate submission if the SERVER-SIDE
+ * Cloud Function (createSecureOrder, not in this file's scope) checks it
+ * against a store of already-processed keys before writing an order.
+ * Sending this key alone, with no server-side dedup check behind it, does
+ * NOT by itself prevent duplicate orders — it is the client half of a
+ * two-sided contract. See createSecureOrderEnvelope in config.js.
+ */
+export function generateIdempotencyKey() {
+    const rand = (typeof crypto !== "undefined" && crypto.getRandomValues)
+        ? Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b => b.toString(16).padStart(2, "0")).join("")
+        : Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+    return `idem_${Date.now()}_${rand}`;
+}

@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- Security (meta equivalents — GitHub Pages: no custom response headers; X-Frame-Options N/A) -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self' https://wa.me; object-src 'none'; frame-src 'none'; script-src 'self' https://www.gstatic.com https://www.googletagmanager.com https://connect.facebook.net 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebase.googleapis.com https://volt-store-67593.firebaseapp.com https://www.google-analytics.com https://region1.google-analytics.com https://connect.facebook.net; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; form-action 'self' https://wa.me; object-src 'none'; frame-src 'none'; script-src 'self' https://www.gstatic.com https://www.googletagmanager.com https://connect.facebook.net 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.googleapis.com https://*.gstatic.com https://*.firebaseio.com wss://*.firebaseio.com https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebase.googleapis.com https://*.cloudfunctions.net https://*.run.app https://volt-store-67593.firebaseapp.com https://www.google-analytics.com https://region1.google-analytics.com https://connect.facebook.net; manifest-src 'self'; worker-src 'self'; upgrade-insecure-requests">
     <meta name="referrer" content="strict-origin-when-cross-origin">
     <meta http-equiv="X-Content-Type-Options" content="nosniff">
     <meta http-equiv="Permissions-Policy" content="camera=(), microphone=(), geolocation=(), payment=()">
@@ -1351,6 +1351,9 @@ function frame() {
                 const allProducts = await getAllProducts();
 
                 container.innerHTML = folders.map(folder => {
+                    const folderId = safeId(folder.id);
+                    if (!folderId) return "";
+                    const folderIcon = escapeHtml(folder.icon || '📁');
                     const assignedProducts = allProducts.filter(p => folderHasProduct(folder, p.id));
                     const unassignedProducts = allProducts.filter(p => !folderHasProduct(folder, p.id));
 
@@ -1360,7 +1363,7 @@ function frame() {
                             <span style="font-size:13px;">
                             ${p.emoji && p.emoji.startsWith('http') ? `<img src="${escapeHtml(p.emoji)}" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;border-radius:2px;" onerror="this.replaceWith(document.createTextNode('📦 '))">` : (p.emoji ? escapeHtml(p.emoji) + ' ' : '📦 ')}
                             ${escapeHtml(p.name)}
-                            </span>                                <button onclick="window.__removeProductFromFolder('${folder.id}', '${p.id}')"
+                            </span>                                <button onclick="window.__removeProductFromFolder('${folderId}', '${safeId(p.id)}')"
                                     style="background:transparent; border:1px solid var(--border); color:var(--muted); border-radius:6px; padding:3px 8px; cursor:pointer; font-size:11px;">إزالة</button>
                             </div>`).join("")
                         : `<p style="color:var(--muted); font-size:12px; padding:8px; text-align:center;">لا توجد منتجات في هذا المجلد بعد.</p>`;
@@ -1372,17 +1375,17 @@ function frame() {
                     return `
                         <div style="background:var(--card-bg); border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:12px;">
                             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-                                <span style="font-weight:bold; color:var(--amber); font-size:15px;">${folder.icon || '📁'} ${escapeHtml(folder.name)}</span>
-                                <button onclick="window.__deleteFolder('${folder.id}')"
+                                <span style="font-weight:bold; color:var(--amber); font-size:15px;">${folderIcon} ${escapeHtml(folder.name)}</span>
+                                <button onclick="window.__deleteFolder('${folderId}')"
                                     style="background:transparent; border:1px solid var(--border); color:var(--muted); border-radius:6px; padding:4px 10px; cursor:pointer; font-size:12px;">🗑️ حذف المجلد</button>
                             </div>
                             <div style="margin-bottom:10px;">${assignedRows}</div>
                             <div style="display:flex; gap:8px;">
-                                <select id="productPicker-${folder.id}" ${unassignedProducts.length === 0 ? 'disabled' : ''}
+                                <select id="productPicker-${folderId}" ${unassignedProducts.length === 0 ? 'disabled' : ''}
                                     style="flex:1; padding:8px; background:#0e140e; border:1px solid var(--border); color:var(--text); border-radius:6px; font-family:'Cairo',sans-serif; font-size:13px;">
                                     ${productOptions}
                                 </select>
-                                <button onclick="window.__addProductToFolder('${folder.id}')" ${unassignedProducts.length === 0 ? 'disabled' : ''}
+                                <button onclick="window.__addProductToFolder('${folderId}')" ${unassignedProducts.length === 0 ? 'disabled' : ''}
                                     style="background:var(--green); color:#000; border:none; border-radius:6px; padding:8px 14px; cursor:pointer; font-size:13px; font-weight:bold; white-space:nowrap;">إضافة
                                     ➕</button>
                             </div>
@@ -1466,12 +1469,14 @@ function frame() {
                 const allProducts = await getAllProducts();
 
                 grid.innerHTML = folders.map(folder => {
+                    const folderId = safeId(folder.id);
+                    if (!folderId) return "";
                     const count = (folder.productIds || []).length;
                     const isOpen = expandedFolderId === folder.id;
                     const folderCard = `
-                        <div class="card glow-card folder-card" data-testid="folder-card" onclick="window.__toggleFolder('${folder.id}')"
+                        <div class="card glow-card folder-card" data-testid="folder-card" onclick="window.__toggleFolder('${folderId}')"
                             style="cursor:pointer; text-align:center; padding:20px 14px; ${isOpen ? 'border-color:var(--amber);' : ''}">
-                            <div style="font-size:38px; margin-bottom:8px;">${folder.icon || '📁'}</div>
+                            <div style="font-size:38px; margin-bottom:8px;">${escapeHtml(folder.icon || '📁')}</div>
                             <h3 class="card-name" style="margin-bottom:4px;">${escapeHtml(folder.name)}</h3>
                             <span style="color:var(--muted); font-size:12px;">${count} ${count === 1 ? 'منتج' : 'منتجات'}</span>
                         </div>`;
@@ -1708,13 +1713,13 @@ function frame() {
         <p>في حالة وصول المنتج تالف أو به عيب، يمكنك طلب الاسترجاع خلال 24 ساعة من استلام الطلب، بشرط عدم استخدام المنتج ووجوده بحالته الأصلية.</p>
         <p>نراجع ونجهز كل طلب بعناية قبل التوصيل، وفريقنا متاح لمساعدتك في حالة وجود أي مشكلة بعد الاستلام.</p>
     </section>
-<section class="v-shop-addon-policy" id="returns-policy" aria-labelledby="returns-policy-title">
-        <h2 id="returns-policy-title">🛡️ جودة واهتمام</h2>
+<section class="v-shop-addon-policy" id="quality-policy" aria-labelledby="quality-policy-title">
+        <h2 id="quality-policy-title">🛡️ جودة واهتمام</h2>
         <p>بنراجع ونجهز كل طلب بعناية قبل التوصيل، وفريقنا متاح لمساعدتك في حالة وجود أي مشكلة بعد الاستلام.</p>
         <p>فريقنا متواجد دائمًا للرد على استفساراتك ومساعدتك في أي وقت. تواصل معنا عبر واتساب على <a href="https://wa.me/201108199917" style="color:var(--green);">01108199917</a>.</p>
     </section>
-<section class="v-shop-addon-policy" id="returns-policy" aria-labelledby="returns-policy-title">
-        <h2 id="returns-policy-title">🎓 عروض خاصة للطلاب</h2>
+<section class="v-shop-addon-policy" id="students-offers" aria-labelledby="students-offers-title">
+        <h2 id="students-offers-title">🎓 عروض خاصة للطلاب</h2>
         <p>خصومات وعروض حصرية لطلاب مدينة زويل ⚡
 وكمان عروض مميزة لطلاب الجامعات الموجودة في محيط 6 أكتوبر.
 تابعنا عشان متفوتش أقوى العروض والخصومات.</p>

@@ -6,6 +6,7 @@
     "use strict";
 
     var _currentPromoCode = "";
+    var _promoRequestSeq = 0;
     // FIX (this pass): cache the discount amount + the cart total it was
     // computed against, both returned by the server at apply-time. Lets
     // updateCartUI() redisplay the discount on every cart render without
@@ -137,17 +138,14 @@
             _cachedForCartTotal = null;
             return 0;
         }
-        if (_cachedForCartTotal === cartTotal) {
-            return _cachedDiscountAmount;
-        }
+        if (_cachedForCartTotal === cartTotal) return _cachedDiscountAmount;
+
+        const mySeq = ++_promoRequestSeq;
         const amount = await revalidateForTotal(_currentPromoCode, cartTotal);
-        if (amount === null) {
-            // Transient failure — return 0 (no discount) rather than
-            // reporting a stale discount that was validated against a
-            // different cart total. The user can re-open the cart to
-            // re-trigger validation once the network is back.
-            return 0;
-        }
+
+        if (mySeq !== _promoRequestSeq) return amount === null ? 0 : amount;
+
+        if (amount === null) return 0;
         _cachedDiscountAmount = amount;
         _cachedForCartTotal = cartTotal;
         return amount;

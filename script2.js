@@ -1,3 +1,4 @@
+// ==================== script2.js ====================
 document.addEventListener("DOMContentLoaded", () => {
     // ── Admin panel button handler ────────────────────────────────────────────
     // SECURITY FIXES APPLIED:
@@ -48,31 +49,26 @@ document.addEventListener("DOMContentLoaded", () => {
         // place the promo panel opens, and it only runs after the role
         // check above passes.
         //
-        // TODO (backend): renderPromoTable() currently reads
-        // window.PromoEngine.PROMO_CODES directly in the browser — the full
-        // coupon table is visible client-side regardless of this gate. This
-        // still needs to be replaced with a fetch to a Supabase Edge
-        // Function (e.g. GET /functions/v1/admin-promo-codes) that re-checks
-        // the caller's role server-side before returning any codes. Left
-        // as-is for this pass per your Supabase-already-set-up frontend-only
-        // scope — flagging so it isn't mistaken for solved.
-        //
-        // FIX #4 (ARCHITECTURE — NO CODE CHANGE): The TODO above is the
-        // correct and ONLY fix for the PROMO_CODES exposure. A client-side
-        // patch (e.g. filtering rows, hiding UI) does NOT address the root
-        // issue: window.PromoEngine.PROMO_CODES is already in browser memory
-        // the moment the JS bundle loads, regardless of whether this modal
-        // ever opens or the role check ever passes. Any visitor with DevTools
-        // can read it. The fix requires replacing the renderPromoTable() call
-        // with a fetch to a Supabase Edge Function that gates the data
-        // server-side before it ever reaches the client. No change to this
-        // file is correct until that Edge Function exists.
+        // FIX (data leak closed): window.PromoEngine.PROMO_CODES is no
+        // longer populated at page load for every visitor — it starts
+        // empty (see promoCodeEngine.js) and is only fetched here, via
+        // loadForAdmin(), after the role check above has already passed.
+        // renderPromoTable() is called only once that fetch resolves, so
+        // the table it reads from is guaranteed to be populated before
+        // rendering. The modal itself still opens immediately below,
+        // independent of the fetch, so there's no added open-delay.
         const promoModal = document.getElementById("promo-modal");
         if (promoModal) {
             promoModal.style.display = "flex";
         }
-        if (typeof window.renderPromoTable === "function") {
-            renderPromoTable();
-        }
+
+        (async () => {
+            if (window.PromoEngine && typeof window.PromoEngine.loadForAdmin === "function") {
+                await window.PromoEngine.loadForAdmin();
+            }
+            if (typeof window.renderPromoTable === "function") {
+                renderPromoTable();
+            }
+        })();
     });
 });

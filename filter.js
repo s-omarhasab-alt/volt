@@ -78,7 +78,6 @@ function initProductFilter(config = {}) {
 
     if (!filterContainer || !productContainer) {
         // FIX #6: Generic warning — does not expose internal selector strings.
-        console.warn("initProductFilter: required filter or product container not found. Filter not initialized.");
         return;
     }
 

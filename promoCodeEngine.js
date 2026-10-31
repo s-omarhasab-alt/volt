@@ -1,5 +1,4 @@
-/**
- * promoCodeEngine.js — client-side promo code data + admin-panel support.
+/* promoCodeEngine.js — client-side promo code data + admin-panel support.
  *
  * This file provides the admin panel's promo-code display layer and a
  * local validation fallback when Firestore is not available. The primary
@@ -35,28 +34,7 @@
 
     const STORAGE_KEY = "volt_promo_codes";
 
-    const seedCodes = [
-        {
-            code: "WELCOME10",
-            type: "percentage",
-            value: "10%",
-            percentOff: 10,
-            maxDiscount: 100,
-            minOrder: 0,
-            discountAmount: 0,
-            status: "active"
-        },
-        {
-            code: "SHIP0",
-            type: "free_shipping",
-            value: "",
-            percentOff: 0,
-            shippingDiscount: true,
-            minOrder: 150,
-            discountAmount: 0,
-            status: "active"
-        }
-    ];
+    const seedCodes = [];
 
     async function loadCodes() {
         // أولوية للـ Firestore لو متاح
@@ -78,14 +56,8 @@
             }
         } catch (e) {}
 
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(seedCodes));
-        // حاول تخزين السيد في Firestore عشان يبقى متاح للعميل
-        if (window.voltFirebase && typeof window.voltFirebase.savePromoCode === "function") {
-            for (const code of seedCodes) {
-                try { await window.voltFirebase.savePromoCode(code); } catch (e) {}
-            }
-        }
-        return seedCodes.slice();
+        localStorage.removeItem(STORAGE_KEY);
+        return [];
     }
 
     async function saveCodes(codes) {
@@ -109,95 +81,29 @@
     // PROMO_CODES is read for rendering — see note on window.renderPromoTable
     // wrapping below.
     window.PromoEngine = {
-        PROMO_CODES: (await loadCodes()),
+        PROMO_CODES: [],
 
-        /* ══════════════════════════════════════════════════════════════════
-         * REFERENCE-ONLY — NOT WIRED IN — DO NOT TREAT AS AN ACTIVE CODE PATH
-         * ══════════════════════════════════════════════════════════════════
-         * FIX #18: this status was previously stated only in prose (see the
-         * NOTE below and the file-header comment at the top of this file).
-         * Called out explicitly here so it can't be mistaken for a live
-         * validation path by a future editor skimming the object literal.
-         *
-         * Verified NOT called from: this file, cart-promo.js (confirmed —
-         * its own comments state the window.PromoEngine fallback was
-         * removed from script.js entirely). NOT verified against: script.js
-         * itself, the admin panel's rendering/event code, or any HTML —
-         * none of those were available to search in this pass. If you can
-         * grep the full codebase for `PromoEngine.validatePromoCode` or
-         * `.validatePromoCode(` and it comes back empty, this function can
-         * be deleted outright; until then it's left in place (not deleted)
-         * specifically because deleting on unconfirmed evidence risks
-         * breaking a caller neither of us has seen.
-         *
-         * Validates a code against a cart object of the shape:
-         *   { items: [{ price, qty, category }, ...] }
-         * Returns either:
-         *   { success: true, discount: { amountOff, label } }
-         *   { success: false, message: "<user-facing reason>" }
-         *
-         * NOTE: kept for reference / potential future use, but nothing in
-         * script.js or cart-promo.js currently calls this — real validation
-         * for customer orders happens server-side. If you do wire this back
-         * in anywhere customer-facing, that reintroduces the exact
-         * client-side-trust problem the Edge Function migration fixed.
+        /**
+         * Populates PROMO_CODES from Firestore/localStorage via loadCodes().
+         * NOT called automatically at module load anymore — this used to
+         * fetch and expose the full promo-code table (including inactive/
+         * retired codes, exact discount rules, min-order thresholds) to
+         * every visitor unconditionally, the instant this script parsed,
+         * regardless of whether they ever opened the admin panel. Any
+         * visitor could read the full table via DevTools:
+         * window.PromoEngine.PROMO_CODES. Deferring the fetch to this
+         * explicit method — called only after the admin auth gate in
+         * script2.js passes — means PROMO_CODES stays empty for ordinary
+         * visitors and is populated only for a session that has already
+         * proven (client-side) it is an admin.
+         * Safe to call more than once (e.g. reopening the promo panel);
+         * each call re-fetches and reassigns PROMO_CODES.
          */
-        /* ══════════════════════════════════════════════════════════════════
-        validatePromoCode: function (codeName, codes, cart) {
-            const list = Array.isArray(codes) ? codes : window.PromoEngine.PROMO_CODES;
-            const codeObj = list.find(c => c.code === codeName);
-
-            if (!codeObj) {
-                return { success: false, message: "كود الخصم غير موجود." };
-            }
-            if (codeObj.status !== "active") {
-                return { success: false, message: "كود الخصم غير مفعل حالياً." };
-            }
-
-            const cartTotal = (cart && Array.isArray(cart.items))
-                ? cart.items.reduce((sum, item) => sum + (Number(item.price) || 0) * (Number(item.qty) || 1), 0)
-                : 0;
-
-            if (codeObj.minOrder && cartTotal < codeObj.minOrder) {
-                return {
-                    success: false,
-                    message: `الحد الأدنى للطلب ${codeObj.minOrder} EGP لاستخدام هذا الكود.`
-                };
-            }
-
-            if (codeObj.type === "free_shipping") {
-                return {
-                    success: true,
-                    discount: { amountOff: 0, label: "توصيل مجاني" }
-                };
-            }
-
-            if (codeObj.type === "percentage") {
-                let amountOff = cartTotal * ((codeObj.percentOff || 0) / 100);
-                if (codeObj.maxDiscount) amountOff = Math.min(amountOff, codeObj.maxDiscount);
-                amountOff = Math.round(amountOff * 100) / 100;
-                return {
-                    success: true,
-                    discount: { amountOff, label: `خصم ${codeObj.percentOff}%` }
-                };
-            }
-
-            if (codeObj.type === "fixed") {
-                const amountOff = Math.min(Number(codeObj.fixedAmount) || 0, cartTotal);
-                return {
-                    success: true,
-                    discount: { amountOff, label: `خصم ${codeObj.fixedAmount} EGP` }
-                };
-            }
-
-            // Unknown/tiered type — renderPromoTable already has a "متدرج"
-            // (tiered) fallback label for anything without a plain value,
-            // but there's no computed discount logic for it here since no
-            // seed/example code uses it. Treat as invalid rather than
-            // silently applying a zero discount.
-            return { success: false, message: "نوع كود الخصم غير مدعوم حالياً." };
+        loadForAdmin: async function () {
+            window.PromoEngine.PROMO_CODES = await loadCodes();
+            return window.PromoEngine.PROMO_CODES;
         },
-/* ══════════════════════════════════════════════════════════════════
+
         /**
          * Persist the current in-memory PROMO_CODES array to localStorage.
          * script.js's togglePromoStatus mutates PROMO_CODES entries directly
@@ -205,6 +111,25 @@
          * mutation so admin changes survive a reload. Wired in below via a
          * light wrap of window.togglePromoStatus so no change to script.js
          * is required.
+         *
+         * NOTE: this object literal previously also carried a
+         * validatePromoCode(codeName, codes, cart) method — entirely dead
+         * (verified via AST parse, not by reading the surrounding prose:
+         * it sat inside an unclosed block comment spanning what looked
+         * like two separate comment blocks but tokenized as one continuous
+         * comment from just after PROMO_CODES through just before this
+         * persist() definition). Confirmed zero live callers project-wide:
+         * cart-promo.js's two guarded call sites
+         * (`typeof window.PromoEngine.validatePromoCode === "function"`)
+         * already evaluated false before this removal, since the property
+         * was never actually defined on this object at runtime — so this
+         * deletion changes no observable behavior. Removed rather than
+         * kept "for reference," since promo validation is the customer-
+         * facing security-sensitive path this codebase deliberately moved
+         * server-side (see config.js's validatePromoCodeInFirestore); an
+         * inert copy of the old client-side logic sitting in a live object
+         * literal is a liability if anyone ever re-enables it by accident,
+         * not an asset.
          */
         persist: async function () {
             await saveCodes(window.PromoEngine.PROMO_CODES);

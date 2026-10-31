@@ -37,8 +37,8 @@ import {
     startAfter
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 // 🆕 استدعاء خدمة تسجيل الدخول (Authentication)
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-// 🆕 إضافة جديدة: هنحتاجها في الخطوة 4 عشان نجيب الـ role من Firestore
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-functions.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyAHectEVgse8Ms6hwGu7UIn74L49pUAyCA",
@@ -51,8 +51,8 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-// 🆕 إضافة جديدة: تشغيل خدمة تسجيل الدخول
 const auth = getAuth(app);
+const functions = getFunctions(app);
 
 // تصدير المتغيرات عشان نقدر نستخدمها في باقي ملفات الموقع بعدين (للملفات اللي هي modules برضه)
 export { app, db, auth, signInWithEmailAndPassword, doc, getDoc };
@@ -62,6 +62,26 @@ export { app, db, auth, signInWithEmailAndPassword, doc, getDoc };
 // يقرا من window.voltFirebase من غير ما يحتاج import خالص.
 window.voltFirebase = { auth, db, signInWithEmailAndPassword, doc, getDoc };
 window.dispatchEvent(new Event('voltFirebaseReady'));
+
+async function getCurrentUserProfile() {
+    const authUser = auth.currentUser;
+    if (!authUser) return null;
+    const userDoc = await getDoc(doc(db, "users", authUser.uid));
+    return userDoc.exists()
+        ? { uid: authUser.uid, ...userDoc.data() }
+        : { uid: authUser.uid, role: "client" };
+}
+
+onAuthStateChanged(auth, async () => {
+    try {
+        window.dispatchEvent(new CustomEvent("voltAuthStateChanged", {
+            detail: await getCurrentUserProfile()
+        }));
+    } catch (err) {
+        console.warn("Could not refresh the signed-in profile", err);
+        window.dispatchEvent(new CustomEvent("voltAuthStateChanged", { detail: null }));
+    }
+});
 // ==========================================================================
 // دوال المنتجات — Firestore
 // ==========================================================================
@@ -101,6 +121,29 @@ async function getProductsFromFirestore() {
 // @param {number} options.pageSize      - افتراضي 24
 //
 // @returns {{products: Array, lastDoc: Object|null, hasMore: boolean}}
+//
+// PERF FIX (load-test audit): the catch block below previously fell back
+// to a full, unfiltered getProductsFromFirestore() collection scan
+// whenever the primary paginated query failed (most commonly: the
+// required composite index is missing, rebuilding, or was never
+// deployed). At high request volume that fallback meant every single
+// paginated product request silently degraded into a full-catalog read
+// the instant the index was unavailable — multiplying Firestore reads by
+// catalog size × request volume, invisibly, with no error surfaced
+// anywhere. That silent full-scan path has been removed. This function
+// now throws immediately on failure instead, so a missing/broken index
+// is a loud, fail-fast error instead of an invisible full-table-scan
+// degradation under load.
+//
+// ⚠️ CALL-SITE IMPACT: this function's contract has changed from "always
+// resolves to {products, lastDoc, hasMore}" to "may throw." Both call
+// sites in script.js (applyProductFilters() and loadNextProductsPage())
+// have been updated in this same pass to catch this throw and surface a
+// visible "couldn't load products, please retry" state instead of
+// letting an uncaught rejection break product rendering. If this
+// function is called from anywhere else in the future, that caller must
+// handle the throw itself — it is no longer guaranteed to fail silently
+// into an empty-but-valid result shape.
 async function getProductsPageFromFirestore(options = {}) {
     const {
         category = "all",
@@ -161,11 +204,8 @@ async function getProductsPageFromFirestore(options = {}) {
         return { products, lastDoc, hasMore };
 
     } catch (err) {
-        // أشهر سبب: composite index مش موجود لسه — الـ error في الـ console
-        // بيدّيك رابط مباشر تعمل بيه create. لازم firestore.indexes.json
-        // يتعمله deploy قبل ما ده يشتغل فعلياً.
         console.error("getProductsPageFromFirestore: فشل جلب صفحة المنتجات", err);
-        return { products: [], lastDoc: null, hasMore: false };
+        throw new Error("Missing Firestore Index. Please deploy indexes via: firebase deploy --only firestore:indexes");
     }
 }
 
@@ -203,15 +243,6 @@ async function validateProductSchemaOnce() {
             if (!data.category) issues.missingCategory.push({ id, name });
         });
 
-        const total = issues.missingSearchName.length + issues.priceNotNumber.length + issues.missingCategory.length;
-        if (total === 0) {
-            console.log("✅ validateProductSchemaOnce: كل المنتجات متوافقة");
-        } else {
-            console.warn(`⚠️ validateProductSchemaOnce: ${total} مشكلة — دي مش هتظهر صح في البحث/الفلترة الجديدة:`);
-            if (issues.missingSearchName.length) console.warn(`  🔸 بدون searchName (مش هيظهروا في البحث):`, issues.missingSearchName);
-            if (issues.priceNotNumber.length) console.warn(`  🔸 سعر مش رقم (مش هيظهروا في فلتر السعر):`, issues.priceNotNumber);
-            if (issues.missingCategory.length) console.warn(`  🔸 بدون تصنيف:`, issues.missingCategory);
-        }
         return issues;
     } catch (err) {
         console.error("validateProductSchemaOnce: فشل الفحص", err);
@@ -291,29 +322,17 @@ async function getAllUsersFromFirestore() {
 }
 
 async function findUserByIdNumFromFirestore(idNum) {
-    try {
-        const q = query(collection(db, "users"), where("idNum", "==", idNum), limit(1));
-        const snapshot = await getDocs(q);
-        let user = null;
-        snapshot.forEach((docSnap) => { user = { uid: docSnap.id, ...docSnap.data() }; });
-        return user;
-    } catch (err) {
-        console.warn("findUserByIdNumFromFirestore: فشل البحث", err);
-        return null;
-    }
+    // Do not expose account lookup by phone number to an anonymous browser.
+    return null;
 }
 
 async function findUserByEmailFromFirestore(email) {
-    try {
-        const q = query(collection(db, "users"), where("email", "==", email), limit(1));
-        const snapshot = await getDocs(q);
-        let user = null;
-        snapshot.forEach((docSnap) => { user = { uid: docSnap.id, ...docSnap.data() }; });
-        return user;
-    } catch (err) {
-        console.warn("findUserByEmailFromFirestore: فشل البحث", err);
-        return null;
-    }
+    // Firebase Auth reports duplicate emails during account creation.
+    return null;
+}
+
+async function identifierTaken(type, value) {
+    return false;
 }
 
 async function registerClientUser(email, password, profile) {
@@ -327,9 +346,16 @@ async function registerClientUser(email, password, profile) {
         const userCredential = await createUserWithEmailAndPassword(auth, finalEmail, password);
         const uid = userCredential.user.uid;
 
+        const phone = String(profile.phone || profile.idNum || "").slice(0, 20);
         await setDoc(doc(db, "users", uid), {
-            ...profile,
-            email: email ? email.trim() : "غير محدد",
+            type: String(profile.type || "").slice(0, 40),
+            name: String(profile.name || "").slice(0, 120),
+            phone,
+            idNum: String(profile.idNum || phone).slice(0, 20),
+            address: String(profile.address || "").slice(0, 500),
+            code: String(profile.code || "").slice(0, 40),
+            history: [],
+            email: email ? email.trim().slice(0, 320) : "غير محدد",
             uid,
             role: "client",
             createdAt: new Date().toISOString()
@@ -337,8 +363,23 @@ async function registerClientUser(email, password, profile) {
 
         return { uid, email: finalEmail };
     } catch (err) {
+        // FIX: previously returned { error: err.code, message: err.message } —
+        // err.message is the raw Firebase Auth SDK string (can include the
+        // email address, internal API detail, or implementation-specific
+        // wording depending on SDK version) and was being sent straight to
+        // the client. wizSubmit() in script.js only ever reads result.error
+        // (for its own hardcoded errCode switch) and never result.message,
+        // so this was leaking unused-but-exposed diagnostic detail from a
+        // security-sensitive auth path. Full raw error is still logged to
+        // console.error above for developer visibility — only the returned
+        // object's "message" field changes here, from raw err.message to a
+        // fixed, safe string. Return shape ({ error, message }) and the
+        // "error" field's value (still err.code) are both unchanged, so
+        // wizSubmit()'s existing errCode === "auth/..." checks keep working
+        // exactly as before with zero changes required on the caller side.
         console.error("registerClientUser: فشل التسجيل", err);
-        return { error: err.code || "unknown", message: err.message };
+        const safeMessage = "حدث خطأ أثناء إنشاء الحساب";
+        return { error: err.code || "unknown", message: safeMessage };
     }
 }
 
@@ -363,7 +404,10 @@ async function signOutUser() {
 
 async function saveUserProfileToFirestore(uid, profile) {
     try {
-        await setDoc(doc(db, "users", uid), profile, { merge: true });
+        const safe = { ...profile };
+        delete safe.role;
+        delete safe.uid;
+        await setDoc(doc(db, "users", uid), safe, { merge: true });
         return true;
     } catch (err) {
         console.error("saveUserProfileToFirestore: فشل حفظ البروفايل", err);
@@ -371,14 +415,14 @@ async function saveUserProfileToFirestore(uid, profile) {
     }
 }
 
-async function saveOrderToFirestore(orderData) {
-    try {
-        const docRef = await addDoc(collection(db, "orders"), orderData);
-        return docRef.id;
-    } catch (err) {
-        console.error("saveOrderToFirestore: فشل حفظ الأوردر", err);
-        return null;
-    }
+async function createSecureOrder(payload) {
+    const callable = httpsCallable(functions, "createSecureOrder");
+    const res = await callable(payload);
+    return res && res.data ? res.data : null;
+}
+
+async function saveOrderToFirestore() {
+    return null;
 }
 
 async function getAllOrdersFromFirestore() {
@@ -390,6 +434,41 @@ async function getAllOrdersFromFirestore() {
     } catch (err) {
         console.error("getAllOrdersFromFirestore: فشل جلب الأوردرات", err);
         return [];
+    }
+}
+
+// ==========================================================================
+// 🆕 جلب صفحة أوردرات (Pagination) — إضافية جنب getAllOrdersFromFirestore،
+// مش بديل عنها. نفس نمط getProductsPageFromFirestore فوق: limit(pageSize+1)
+// عشان نعرف hasMore من غير query إضافي، cursorDoc = آخر document من
+// الصفحة السابقة. مخصصة للوحة الأدمن (renderAdminOrders) عشان متبقاش
+// بتجيب كل الأوردرات دفعة واحدة مع كل فتح للوحة.
+//
+// @param {number} pageSize - افتراضي 50
+// @param {Object|null} cursorDoc - آخر document من الصفحة السابقة، أو null لأول صفحة
+// @returns {{orders: Array, lastDoc: Object|null, hasMore: boolean}}
+async function getOrdersPageFromFirestore(pageSize = 50, cursorDoc = null) {
+    try {
+        const constraints = [orderBy("createdAt", "desc")];
+        if (cursorDoc) constraints.push(startAfter(cursorDoc));
+        constraints.push(limit(pageSize + 1));
+
+        const q = query(collection(db, "orders"), ...constraints);
+        const snapshot = await getDocs(q);
+
+        let docs = snapshot.docs;
+        const hasMore = docs.length > pageSize;
+        if (hasMore) docs = docs.slice(0, pageSize);
+
+        const orders = docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        const lastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
+
+        return { orders, lastDoc, hasMore };
+    } catch (err) {
+        // أشهر سبب: composite index على orders (createdAt desc) مش موجود
+        // لسه — نفس النمط اللي getProductsPageFromFirestore بيتعامل معاه.
+        console.error("getOrdersPageFromFirestore: فشل جلب صفحة الأوردرات", err);
+        return { orders: [], lastDoc: null, hasMore: false };
     }
 }
 
@@ -417,21 +496,11 @@ async function deleteOrderFromFirestore(orderId) {
 // أكواد الخصم والمفضلة
 // ==========================================================================
 
-async function savePromoCodeToFirestore(codeData) {
-    try {
-        const codeId = String(codeData.code).toUpperCase();
-        await setDoc(doc(db, "promoCodes", codeId), codeData, { merge: true });
-        return true;
-    } catch (err) {
-        console.error("savePromoCodeToFirestore: فشل حفظ كود الخصم", err);
-        return false;
-    }
-}
-
 async function deletePromoCodeFromFirestore(codeName) {
     try {
-        await deleteDoc(doc(db, "promoCodes", String(codeName).toUpperCase()));
-        return true;
+        const callable = httpsCallable(functions, "deletePromoCode");
+        const res = await callable({ code: String(codeName || "") });
+        return !!(res && res.data && res.data.success);
     } catch (err) {
         console.error("deletePromoCodeFromFirestore: فشل حذف كود الخصم", err);
         return false;
@@ -452,26 +521,9 @@ async function getAllPromoCodesFromFirestore() {
 
 async function validatePromoCodeInFirestore(code, cartTotal) {
     try {
-        const docSnap = await getDoc(doc(db, "promoCodes", String(code).toUpperCase()));
-        if (!docSnap.exists()) return { valid: false, reason: "not_found" };
-        const data = docSnap.data();
-        if (data.status !== "active") return { valid: false, reason: "inactive" };
-        if (typeof data.minOrder === "number" && cartTotal < data.minOrder) return { valid: false, reason: "min_order" };
-        if (typeof data.maxUses === "number" && (data.uses || 0) >= data.maxUses) return { valid: false, reason: "expired" };
-
-        let discountAmount = Number(data.discountAmount) || 0;
-        if (data.type === "percentage" && typeof data.percentOff === "number") {
-            discountAmount = cartTotal * (data.percentOff / 100);
-            if (typeof data.maxDiscount === "number" && data.maxDiscount > 0) {
-                discountAmount = Math.min(discountAmount, data.maxDiscount);
-            }
-        } else if (data.type === "fixed" && typeof data.fixedAmount === "number") {
-            discountAmount = Math.min(data.fixedAmount, cartTotal);
-        } else if (data.type === "free_shipping") {
-            discountAmount = 0;
-        }
-
-        return { valid: true, discount_amount: Math.round(discountAmount * 100) / 100 };
+        const callable = httpsCallable(functions, "validatePromoCode");
+        const res = await callable({ code: String(code || ""), cartTotal: Number(cartTotal) });
+        return res && res.data ? res.data : { valid: false, reason: "error" };
     } catch (err) {
         console.error("validatePromoCodeInFirestore: فشل التحقق", err);
         return { valid: false, reason: "error" };
@@ -490,7 +542,7 @@ async function getFavoritesFromFirestore(uid) {
 
 async function saveFavoritesToFirestore(uid, productIds) {
     try {
-        await setDoc(doc(db, "favorites", uid), { productIds }, { merge: true });
+        await setDoc(doc(db, "favorites", uid), { productIds });
         return true;
     } catch (err) {
         console.error("saveFavoritesToFirestore: فشل حفظ المفضلة", err);
@@ -604,17 +656,39 @@ async function deleteUserFromFirestore(uid) {
         return false;
     }
 }
-
+async function deleteUserAccountSecure(uid) {
+    try {
+        const callable = httpsCallable(functions, "deleteUserAccount");
+        await callable({ uid });
+        return true;
+    } catch (err) {
+        console.error("deleteUserAccountSecure: فشل حذف الحساب", err);
+        return false;
+    }
+}
+async function savePromoCodeToFirestore(codeData) {
+    try {
+        const callable = httpsCallable(functions, "savePromoCode");
+        const res = await callable(codeData);
+        return !!(res && res.data && res.data.success);
+    } catch (err) {
+        console.error("savePromoCodeToFirestore: فشل حفظ كود الخصم", err);
+        return false;
+    }
+}
 // إتاحة الدوال للملفات التانية
 window.voltFirebase.getAllUsers = getAllUsersFromFirestore;
 window.voltFirebase.findUserByIdNum = findUserByIdNumFromFirestore;
 window.voltFirebase.findUserByEmail = findUserByEmailFromFirestore;
+window.voltFirebase.identifierTaken = identifierTaken;
+window.voltFirebase.createSecureOrder = createSecureOrder;
 window.voltFirebase.registerClient = registerClientUser;
 window.voltFirebase.signInClient = signInClientUser;
 window.voltFirebase.signOutUser = signOutUser;
 window.voltFirebase.saveUserProfile = saveUserProfileToFirestore;
 window.voltFirebase.saveOrder = saveOrderToFirestore;
 window.voltFirebase.getAllOrders = getAllOrdersFromFirestore;
+window.voltFirebase.getOrdersPage = getOrdersPageFromFirestore;
 window.voltFirebase.updateOrder = updateOrderInFirestore;
 window.voltFirebase.deleteOrder = deleteOrderFromFirestore;
 window.voltFirebase.getAllPromoCodes = getAllPromoCodesFromFirestore;
@@ -631,4 +705,6 @@ window.voltFirebase.getTasks = getTasksFromFirestore;
 window.voltFirebase.addTask = addTaskToFirestore;
 window.voltFirebase.deleteTask = deleteTaskFromFirestore;
 window.voltFirebase.deleteAllTasks = deleteAllTasksFromFirestore;
-window.voltFirebase.deleteUser = deleteUserFromFirestore;
+window.voltFirebase.deleteUser = deleteUserAccountSecure;
+window.voltFirebase.getCurrentUserProfile = getCurrentUserProfile;
+window.voltFirebase.logAnalyticsEvent = async function logAnalyticsEvent() { return true; };

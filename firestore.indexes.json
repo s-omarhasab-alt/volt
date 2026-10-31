@@ -31,6 +31,15 @@
         { "fieldPath": "price", "order": "ASCENDING" },
         { "fieldPath": "name", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "products",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "price", "order": "ASCENDING" },
+        { "fieldPath": "name", "order": "ASCENDING" }
+      ]
     }
   ]
 }
