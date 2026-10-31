@@ -61,7 +61,6 @@ export { app, db, auth, signInWithEmailAndPassword, doc, getDoc };
 // (اللي هو مش module) محتاج يوصلها. أي ملف عادي في الصفحة يقدر
 // يقرا من window.voltFirebase من غير ما يحتاج import خالص.
 window.voltFirebase = { auth, db, signInWithEmailAndPassword, doc, getDoc };
-window.dispatchEvent(new Event('voltFirebaseReady'));
 
 async function getCurrentUserProfile() {
     const authUser = auth.currentUser;
@@ -708,3 +707,4 @@ window.voltFirebase.deleteAllTasks = deleteAllTasksFromFirestore;
 window.voltFirebase.deleteUser = deleteUserAccountSecure;
 window.voltFirebase.getCurrentUserProfile = getCurrentUserProfile;
 window.voltFirebase.logAnalyticsEvent = async function logAnalyticsEvent() { return true; };
+window.dispatchEvent(new Event('voltFirebaseReady'));

@@ -2425,7 +2425,11 @@ function initLightning() {
     resize();
     window.addEventListener('resize', resize);
     let timer = 0;
+    let rafId = 0;
+    let active = true;
     const loop = () => {
+        rafId = 0;
+        if (!active) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (Math.random() < 0.02 && timer <= 0) timer = 8;
         if (timer > 0) {
@@ -2433,8 +2437,25 @@ function initLightning() {
             let x = Math.random() * canvas.width, y = 0; ctx.moveTo(x, y);
             while (y < canvas.height) { x += Math.random() * 40 - 20; y += Math.random() * 30; ctx.lineTo(x, y); }
             ctx.stroke(); timer--;
-        } requestAnimationFrame(loop);
-    }; loop();
+        }
+        rafId = requestAnimationFrame(loop);
+    };
+    const start = () => {
+        active = true;
+        if (!rafId) rafId = requestAnimationFrame(loop);
+    };
+    const stop = () => {
+        active = false;
+        if (rafId) {
+            cancelAnimationFrame(rafId);
+            rafId = 0;
+        }
+    };
+    start();
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "hidden") stop();
+        else start();
+    });
 }
 // PERF: كانت querySelectorAll(".glow-card") بتتنفذ جوه mousemove handler
 // نفسه — mousemove بيطلق عشرات المرات في الثانية، وكل مرة كانت بتعمل full

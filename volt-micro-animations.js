@@ -17,8 +17,11 @@
     function pulseOnce(el, className, ms) {
         if (!el || reduceMotion.matches) return;
         el.classList.remove(className);
-        void el.offsetWidth;
-        el.classList.add(className);
+        requestAnimationFrame(function () {
+            requestAnimationFrame(function () {
+                el.classList.add(className);
+            });
+        });
         var prev = pulseTimers.get(el);
         if (prev) clearTimeout(prev);
         pulseTimers.set(el, setTimeout(function () {

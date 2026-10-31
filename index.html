@@ -1098,8 +1098,12 @@
                 window.addEventListener('resize', resize);
                 var ctx = canvas.getContext('2d');
                 var t = 0;
+                var rafId = 0;
+                var active = true;
 
                 function frame() {
+                    rafId = 0;
+                    if (!active) return;
                     var W = canvas.width, H = canvas.height;
                     ctx.clearRect(0, 0, W, H);
 
@@ -1107,7 +1111,6 @@
                     var rx = W * 0.48, ry = H * 0.42;
                     var speed = t * 0.045;
 
-                    // 3 بروق تدور في حلقة داخل الحروف
                     for (var i = 0; i < 3; i++) {
                         var angle1 = speed + i * (Math.PI * 2 / 3);
                         var angle2 = angle1 + 0.55;
@@ -1118,7 +1121,6 @@
                         var pts = lightning(x1, y1, x2, y2, 10, 5);
                         drawBoltOnCtx(ctx, pts, 0.85, 1.0);
 
-                        // برق ثانوي أخفى
                         if (Math.random() < 0.3) {
                             var angle3 = angle1 + 0.25;
                             var x3 = cx + Math.cos(angle3) * rx * 0.7;
@@ -1128,9 +1130,24 @@
                         }
                     }
                     t++;
-                    requestAnimationFrame(frame);
+                    rafId = requestAnimationFrame(frame);
                 }
-                frame();
+                function startNav() {
+                    active = true;
+                    if (!rafId) rafId = requestAnimationFrame(frame);
+                }
+                function stopNav() {
+                    active = false;
+                    if (rafId) {
+                        cancelAnimationFrame(rafId);
+                        rafId = 0;
+                    }
+                }
+                startNav();
+                document.addEventListener('visibilitychange', function () {
+                    if (document.visibilityState === 'hidden') stopNav();
+                    else startNav();
+                });
             }
 
             /* ============================================================
@@ -1150,7 +1167,12 @@
 
                 var ctx = canvas.getContext('2d');
                 var t = 0;
-function frame() {
+                var rafId = 0;
+                var active = true;
+
+                function frame() {
+                    rafId = 0;
+                    if (!active) return;
                     var W = canvas.width, H = canvas.height;
                     ctx.clearRect(0, 0, W, H);
                     var cx = W / 2, cy = H / 2;
@@ -1175,18 +1197,49 @@ function frame() {
                         }
                     }
                     t++;
-                    requestAnimationFrame(frame);
+                    rafId = requestAnimationFrame(frame);
                 }
-                frame();
-            }/* تشغيل بعد تحميل الصفحة */
+                function stopSplashPermanent() {
+                    active = false;
+                    if (rafId) {
+                        cancelAnimationFrame(rafId);
+                        rafId = 0;
+                    }
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                }
+                window.__voltStopSplashLightning = stopSplashPermanent;
+                active = true;
+                rafId = requestAnimationFrame(frame);
+                document.addEventListener('visibilitychange', function () {
+                    if (document.visibilityState === 'hidden') {
+                        if (rafId) {
+                            cancelAnimationFrame(rafId);
+                            rafId = 0;
+                        }
+                    } else if (active && !rafId) {
+                        rafId = requestAnimationFrame(frame);
+                    }
+                });
+            }
+            function bindSplashLightningTeardown() {
+                var splashEl = document.getElementById('splash');
+                if (!splashEl) return;
+                splashEl.addEventListener('animationend', function (e) {
+                    if (e.animationName === 'splashFade' && typeof window.__voltStopSplashLightning === 'function') {
+                        window.__voltStopSplashLightning();
+                    }
+                });
+            }
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', function () {
                     initNavLightning();
                     initSplashLightning();
+                    bindSplashLightningTeardown();
                 });
             } else {
                 initNavLightning();
                 initSplashLightning();
+                bindSplashLightningTeardown();
             }
         })();
     </script>
