@@ -5,6 +5,18 @@
    binds listeners to them) and are only hidden here.
    ========================================================================== */
 
+/* --------------------------------------------------------------------------
+   ACCENT: Electric Cyan #00D4FF (was green). Change it in ONE place below
+   (.vf-layout --vf-accent / --vf-accent-dim).
+   Intentionally left unchanged: .vf-av--* (stock badges on product cards),
+   mark (search highlight), .vf-admin-title / .vf-save (admin editor).
+   -------------------------------------------------------------------------- */
+
+.vf-layout {
+    --vf-accent: #00D4FF;
+    --vf-accent-dim: #0A7C94;
+}
+
 .filter-bar,
 .price-filter-row {
     display: none;
@@ -76,7 +88,7 @@
 }
 
 .vf-reset:hover {
-    color: var(--green);
+    color: var(--vf-accent);
 }
 
 .vf-reset[hidden],
@@ -98,7 +110,7 @@
 }
 
 .vf-plab {
-    color: var(--green);
+    color: var(--vf-accent);
     font-family: 'Rajdhani', sans-serif;
     font-weight: 700;
     font-size: 13px;
@@ -145,9 +157,9 @@
 }
 
 .vf-ci.on {
-    background: rgba(29, 185, 84, .12);
-    border-color: var(--green-dim);
-    color: var(--green);
+    background: rgba(0, 212, 255, .12);
+    border-color: var(--vf-accent-dim);
+    color: var(--vf-accent);
     font-weight: 700;
 }
 
@@ -158,7 +170,7 @@
 }
 
 .vf-ci.on small {
-    color: var(--green);
+    color: var(--vf-accent);
 }
 
 /* price */
@@ -189,7 +201,7 @@
 }
 
 .vf-num:focus {
-    border-color: var(--green);
+    border-color: var(--vf-accent);
 }
 
 .vf-num.vf-bad {
@@ -217,7 +229,7 @@
 }
 
 .vf-fl {
-    background: var(--green);
+    background: var(--vf-accent);
 }
 
 .vf-dr input[type="range"] {
@@ -249,7 +261,7 @@
     height: 20px;
     margin-top: 2px;
     border-radius: 50%;
-    background: var(--green);
+    background: var(--vf-accent);
     border: 2px solid var(--black);
     cursor: pointer;
 }
@@ -259,13 +271,13 @@
     width: 16px;
     height: 16px;
     border-radius: 50%;
-    background: var(--green);
+    background: var(--vf-accent);
     border: 2px solid var(--black);
     cursor: pointer;
 }
 
 .vf-dr input[type="range"]:focus-visible::-webkit-slider-thumb {
-    outline: 2px solid var(--green);
+    outline: 2px solid var(--vf-accent);
     outline-offset: 2px;
 }
 
@@ -308,7 +320,7 @@
 }
 
 .vf-seg button.on {
-    background: var(--green);
+    background: var(--vf-accent);
     color: #000;
     font-weight: 700;
 }
@@ -336,12 +348,12 @@
 }
 
 .vf-fc:hover {
-    border-color: var(--green-dim);
+    border-color: var(--vf-accent-dim);
 }
 
 .vf-fc.on {
-    background: var(--green);
-    border-color: var(--green);
+    background: var(--vf-accent);
+    border-color: var(--vf-accent);
     color: #000;
     font-weight: 700;
 }
@@ -417,9 +429,9 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: rgba(29, 185, 84, .12);
-    border: 1px solid var(--green-dim);
-    color: var(--green);
+    background: rgba(0, 212, 255, .12);
+    border: 1px solid var(--vf-accent-dim);
+    color: var(--vf-accent);
     border-radius: 6px;
     padding: 4px 10px;
     margin: 0 0 6px 6px;
@@ -429,7 +441,7 @@
 }
 
 .vf-tag:hover {
-    background: rgba(29, 185, 84, .22);
+    background: rgba(0, 212, 255, .22);
 }
 
 .vf-x {
@@ -450,8 +462,8 @@
 
 .vf-empty-btn {
     background: none;
-    border: 1.5px solid var(--green);
-    color: var(--green);
+    border: 1.5px solid var(--vf-accent);
+    color: var(--vf-accent);
     border-radius: 8px;
     padding: 9px 18px;
     font-family: 'Cairo', sans-serif;
@@ -578,7 +590,7 @@
 .vf-tag:focus-visible,
 .vf-seg button:focus-visible,
 .vf-toggle:focus-visible {
-    outline: 2px solid var(--green);
+    outline: 2px solid var(--vf-accent);
     outline-offset: 2px;
 }
 
@@ -603,8 +615,8 @@
         gap: 8px;
         min-height: 44px;
         background: var(--card-bg);
-        border: 1.5px solid var(--green-dim);
-        color: var(--green);
+        border: 1.5px solid var(--vf-accent-dim);
+        color: var(--vf-accent);
         border-radius: 10px;
         font-family: 'Cairo', sans-serif;
         font-weight: 700;
@@ -613,7 +625,7 @@
     }
 
     .vf-badge {
-        background: var(--green);
+        background: var(--vf-accent);
         color: #000;
         border-radius: 99px;
         min-width: 20px;
