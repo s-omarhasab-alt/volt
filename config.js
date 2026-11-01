@@ -24,6 +24,7 @@ import {
     getFirestore,
     collection,
     getDocs,
+    getCountFromServer,
     addDoc,
     doc,
     setDoc,
@@ -139,7 +140,7 @@ async function getProductsFromFirestore() {
 //
 // ⚠️ CALL-SITE IMPACT: this function's contract has changed from "always
 // resolves to {products, lastDoc, hasMore}" to "may throw." Both call
-// sites in script.js (applyProductFilters() and loadNextProductsPage())
+// sites in script.js (applyProductFilters() and loadProductsPage())
 // have been updated in this same pass to catch this throw and surface a
 // visible "couldn't load products, please retry" state instead of
 // letting an uncaught rejection break product rendering. If this
@@ -203,10 +204,35 @@ async function getProductsPageFromFirestore(options = {}) {
         }
 
         const lastDoc = docs.length > 0 ? docs[docs.length - 1] : null;
-        return { products, lastDoc, hasMore };
+        return { products, lastDoc, hasMore, docs };
 
     } catch (err) {
         console.error("getProductsPageFromFirestore: فشل جلب صفحة المنتجات", err);
+        throw new Error("Missing Firestore Index. Please deploy indexes via: firebase deploy --only firestore:indexes");
+    }
+}
+
+async function getProductsCountFromFirestore(options = {}) {
+    const { category = "all", maxPrice = null, searchPrefix = "" } = options;
+
+    try {
+        const constraints = [];
+
+        if (category && category !== "all") {
+            constraints.push(where("category", "==", category));
+        }
+
+        if (searchPrefix) {
+            constraints.push(where("searchName", ">=", searchPrefix));
+            constraints.push(where("searchName", "<=", searchPrefix + "\uf8ff"));
+        } else if (maxPrice !== null) {
+            constraints.push(where("price", "<=", maxPrice));
+        }
+
+        const snapshot = await getCountFromServer(query(collection(db, "products"), ...constraints));
+        return snapshot.data().count;
+    } catch (err) {
+        console.error("getProductsCountFromFirestore: فشل عدّ المنتجات", err);
         throw new Error("Missing Firestore Index. Please deploy indexes via: firebase deploy --only firestore:indexes");
     }
 }
@@ -304,6 +330,7 @@ window.voltFirebase.updateProduct = updateProductInFirestore;
 window.voltFirebase.deleteProduct = deleteProductFromFirestore;
 // 🆕 Pagination — جنب getProducts القديمة، مش بدالها
 window.voltFirebase.getProductsPage = getProductsPageFromFirestore;
+window.voltFirebase.getProductsCount = getProductsCountFromFirestore;
 window.voltFirebase.getProductById = getProductByIdFromFirestore;
 window.voltFirebase.validateProductSchema = validateProductSchemaOnce;
 

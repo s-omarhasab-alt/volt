@@ -176,9 +176,15 @@ let activePriceMax = null; // الحد الأقصى للسعر من السلاي
 const WA_NUMBER = "201108199917";
 
 // ── حالة الـ Pagination — بديل عن جلب كل المنتجات دفعة واحدة ──
-let currentPageCursor = null;   // آخر document شفناه (null = أول صفحة)
-let currentPageHasMore = true;  // هل فيه صفحة بعد كده
-let isLoadingNextPage = false;  // قفل يمنع تحميل مزدوج أثناء الـ scroll
+const PRODUCTS_PAGE_SIZE = 30;
+const PRODUCTS_MEMORY_FETCH_LIMIT = 300;
+let currentProductsPage = 1;
+let totalProductsPages = 1;
+let totalProductsCount = 0;
+let productsCountReady = false;
+let productsPageCursors = [null];
+let productsMemoryList = null;
+let productsPageRequestSeq = 0;
 // FIX (race condition): يمنع تكرار الاستماع لـ voltFirebaseReady لو applyProductFilters()
 // اتنادت أكتر من مرة قبل ما Firebase يجهز (مثلاً العميل بدّل فلتر مرتين بسرعة على نت بطيء)
 let voltProductFiltersRetryBound = false;
@@ -188,7 +194,7 @@ let voltProductFiltersRetryBound = false;
 // العميل رجع لنفس تركيبة (تصنيف + سعر + بحث) خلال 60 ثانية (مثلاً ضغط
 // زرار "الكل" بعد "آردوينو" ورجع تاني، أو بدّل فلتر السعر بسرعة ورجع
 // لنفس القيمة). المفتاح = تركيبة الفلاتر الثلاثة نفسها؛ صفحات الـ
-// scroll التالية (loadNextProductsPage) مش متأثرة — دي بس أول صفحة.
+// الصفحات التالية (رقم 2 وما بعدها) مش متأثرة — دي بس أول صفحة.
 const _searchQueryCache = new Map();
 const SEARCH_CACHE_TTL_MS = 60000;
 function _voltGetSearchCacheKey(category, maxPrice, searchPrefix) {
@@ -235,7 +241,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     setupSearch();
     await setupPriceFilter();
     await applyProductFilters();
-    setupInfiniteScroll(); // FIX (pagination): مرة واحدة بس — sentinel ثابت بعد #products
+    setupProductsPagination();
     setupCartSystem();
     updateCartBadge();
     typeWriter();
@@ -350,69 +356,6 @@ function renderProducts(products) {
     }
 }
 
-// FIX (pagination): بتضيف كروت جديدة تحت الموجودين في #products، من غير
-// ما تمسح أو تعيد رندر اللي اتحمّل قبل كده. بتستخدم بالظبط نفس
-// buildProductCardHTML اللي renderProducts() فوق بتستخدمها، فمفيش فرق
-// بصري ممكن يحصل بين الصفحة الأولى والصفحات اللي بعدها.
-function appendProductCards(products) {
-    const c = document.getElementById("products");
-    if (!c || !products.length) return;
-    c.insertAdjacentHTML('beforeend', products.map(p => buildProductCardHTML(p)).join(''));
-    // PERF: يحدّث كاش initGlowCardPerformance() بعد إضافة كروت جديدة عبر
-    // infinite scroll — إضافي، مش بديل عن أي سطر موجود تحت.
-    if (typeof window.__voltRefreshGlowCards === "function") {
-        window.__voltRefreshGlowCards();
-    }
-    if (window.__volt && window.__volt.microAnimations && typeof window.__volt.microAnimations.onProductsRendered === "function") {
-        window.__volt.microAnimations.onProductsRendered();
-    }
-}
-
-// FIX (pagination): sentinel عنصر غير مرئي بعد #products مباشرة — أول ما
-// يدخل نطاق الرؤية (rootMargin بيخليه يتفعّل قبل ما العميل يوصله فعلياً
-// بـ 300px، عشان التحميل يحصل بسلاسة من غير ما العميل يحس بوقفة)،
-// loadNextProductsPage() بتتنادى. بتتنادى مرة واحدة بس عند التحميل
-// الأول — #products نفسه (والـ sentinel بعده) مش بيتمسحوا من الـ DOM
-// أبداً، فمفيش داعي تعيد إنشاء الـ observer مع كل تغيير فلتر.
-function setupInfiniteScroll() {
-    const c = document.getElementById("products");
-    if (!c || !("IntersectionObserver" in window)) return;
-    if (document.getElementById("products-scroll-sentinel")) return; // منع تكرار الإعداد
-
-    const sentinel = document.createElement("div");
-    sentinel.id = "products-scroll-sentinel";
-    sentinel.style.cssText = "height:1px;";
-    c.insertAdjacentElement('afterend', sentinel);
-
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) loadNextProductsPage();
-        });
-    }, { rootMargin: "300px 0px" });
-
-    observer.observe(sentinel);
-}
-
-// FIX (pagination): مؤشر بصري بسيط ("جاري تحميل المزيد...") بيظهر أثناء
-// جلب الصفحة الجاية، ويختفي بمجرد ما تخلص — عشان العميل ميحسش إن
-// السكرول "وقف" فجأة وهو مستني.
-function showInfiniteScrollLoader(show) {
-    const c = document.getElementById("products");
-    if (!c) return;
-    let loader = document.getElementById("products-loading-more");
-    if (show) {
-        if (!loader) {
-            loader = document.createElement("div");
-            loader.id = "products-loading-more";
-            loader.style.cssText = "grid-column:1/-1;text-align:center;padding:20px;color:var(--muted);";
-            loader.textContent = "⏳ جاري تحميل المزيد...";
-            c.insertAdjacentElement('afterend', loader);
-        }
-    } else if (loader) {
-        loader.remove();
-    }
-}
-
 function toggleDetailsView(id) {
     const el = document.getElementById(`pd${id}`);
     if (el) el.style.display = el.style.display === "block" ? "none" : "block";
@@ -445,32 +388,123 @@ function productMatchesSearch(p, q) {
     return name.includes(q) || desc.includes(q) || cat.includes(q) || emoji.includes(q) || specs.includes(q);
 }
 
-// نقطة القرار الوحيدة لكل الفلاتر مجتمعة (تصنيف + بحث + سعر).
-// FIX (pagination): كانت بتجيب كل المنتجات وتفلتر محلياً (.filter()) —
-// دلوقتي بتصفّر حالة الـ pagination وتبدأ query جديد في Firestore نفسه
-// (تصنيف + سعر + بداية اسم)، وترندر أول صفحة (24 منتج) بس. الصفحات
-// اللي بعدها بتتحمّل عن طريق loadNextProductsPage() تحت مع الـ scroll.
-async function applyProductFilters() {
-    currentPageCursor = null;
-    currentPageHasMore = true;
-
+function getActiveProductFilters() {
     const inp = document.getElementById("searchInput");
-    const q = inp ? inp.value.toLowerCase().trim() : "";
+    return {
+        category: activeCategory,
+        maxPrice: typeof activePriceMax === "number" ? activePriceMax : null,
+        searchPrefix: inp ? inp.value.toLowerCase().trim() : ""
+    };
+}
 
-    if (!window.voltFirebase || typeof window.voltFirebase.getProductsPage !== "function") {
-        // FIX (race condition): config.js بيتحمّل كـ type="module" وممكن
-        // يستنى شوية قبل ما window.voltFirebase يبقى جاهز، بينما
-        // DOMContentLoaded (اللي بينادي applyProductFilters() أول مرة) ممكن
-        // يفلق قبل كده على نت بطيء. قبل الفكس ده، الحالة دي كانت بترسم
-        // شبكة منتجات فاضية للأبد من غير أي إعادة محاولة — عكس نظام
-        // الفولدرز اللي أصلاً بيستمع لـ voltFirebaseReady (شوف index.html).
-        // بنطبّق نفس النمط هنا: نعرض حالة فاضية مؤقتاً، ونسجّل استماع لمرة
-        // واحدة بس (بحماية voltProductFiltersRetryBound عشان لو العميل
-        // بدّل فلتر أكتر من مرة قبل ما Firebase يجهز، مينفعش يتسجّل أكتر من
-        // مستمع واحد ويتسببوا في نداءات متزامنة متضاربة على نفس حالة
-        // الـ pagination) — فور ما Firebase يجهز فعلياً، applyProductFilters()
-        // بتتنادى تاني وترجع تجيب المنتجات الحقيقية بالفلتر الحالي.
+function getProductsPaginationWindow(current, total) {
+    const set = new Set([1, total, current - 1, current, current + 1]);
+    const pages = Array.from(set).filter(n => n >= 1 && n <= total).sort((a, b) => a - b);
+    const out = [];
+    pages.forEach((n, i) => {
+        if (i) {
+            const gap = n - pages[i - 1];
+            if (gap === 2) out.push(pages[i - 1] + 1);
+            else if (gap > 2) out.push("gap");
+        }
+        out.push(n);
+    });
+    return out;
+}
+
+function setProductsPaginationBusy(isBusy) {
+    const nav = document.getElementById("productsPagination");
+    if (!nav) return;
+    nav.classList.toggle("volt-pg-busy", isBusy);
+    if (isBusy) nav.setAttribute("aria-busy", "true");
+    else nav.removeAttribute("aria-busy");
+}
+
+function renderProductsPagination() {
+    const nav = document.getElementById("productsPagination");
+    if (!nav) return;
+    nav.classList.remove("volt-pg-busy");
+    nav.removeAttribute("aria-busy");
+
+    if (totalProductsPages <= 1) {
+        nav.innerHTML = "";
+        nav.hidden = true;
+        return;
+    }
+    nav.hidden = false;
+
+    const current = currentProductsPage;
+    const total = totalProductsPages;
+    const from = (current - 1) * PRODUCTS_PAGE_SIZE + 1;
+    const to = Math.min(current * PRODUCTS_PAGE_SIZE, totalProductsCount);
+    const items = getProductsPaginationWindow(current, total);
+
+    let trace = "";
+    items.forEach((item, i) => {
+        if (i) {
+            const prev = items[i - 1];
+            const done = item === "gap" ? prev < current : item <= current;
+            trace += `<span class="volt-pg-line${done ? " is-done" : ""}"></span>`;
+        }
+        if (item === "gap") {
+            trace += `<span class="volt-pg-gap" aria-hidden="true">…</span>`;
+        } else {
+            const state = item === current ? " is-current" : (item < current ? " is-done" : "");
+            trace += `<button type="button" class="volt-pg-node${state}" data-page="${item}" data-testid="pagination-page-${item}" aria-label="الصفحة ${item}"${item === current ? ' aria-current="page"' : ""}>${item}</button>`;
+        }
+    });
+
+    nav.innerHTML = `
+        <div class="volt-pg-info" data-testid="pagination-info">عرض ${from}–${to} من ${totalProductsCount} منتج</div>
+        <div class="volt-pg-trace">${trace}</div>
+        <div class="volt-pg-actions">
+            <button type="button" class="volt-pg-btn volt-pg-prev" data-page="${current - 1}" data-testid="pagination-prev"${current === 1 ? " disabled" : ""}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"></polyline></svg>
+                السابق
+            </button>
+            <button type="button" class="volt-pg-btn volt-pg-next" data-page="${current + 1}" data-testid="pagination-next"${current === total ? " disabled" : ""}>
+                التالي
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 6 9 12 15 18"></polyline></svg>
+            </button>
+        </div>`;
+}
+
+function setupProductsPagination() {
+    const nav = document.getElementById("productsPagination");
+    if (!nav || nav.dataset.voltBound === "1") return;
+    nav.dataset.voltBound = "1";
+    nav.addEventListener("click", e => {
+        const btn = e.target.closest("[data-page]");
+        if (!btn || !nav.contains(btn) || btn.disabled) return;
+        if (nav.classList.contains("volt-pg-busy")) return;
+        const target = parseInt(btn.getAttribute("data-page"), 10);
+        if (!Number.isInteger(target) || target < 1 || target > totalProductsPages || target === currentProductsPage) return;
+        goToProductsPage(target);
+    });
+}
+
+function goToProductsPage(page) {
+    const title = document.getElementById("productsTitle");
+    if (title) {
+        const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        title.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    }
+    return loadProductsPage(page, true);
+}
+
+async function applyProductFilters() {
+    productsPageCursors = [null];
+    productsMemoryList = null;
+    productsCountReady = false;
+
+    if (!window.voltFirebase
+        || typeof window.voltFirebase.getProductsPage !== "function"
+        || typeof window.voltFirebase.getProductsCount !== "function") {
+        currentProductsPage = 1;
+        totalProductsPages = 1;
+        totalProductsCount = 0;
         renderProducts([]);
+        renderProductsPagination();
         if (!voltProductFiltersRetryBound) {
             voltProductFiltersRetryBound = true;
             window.addEventListener("voltFirebaseReady", () => {
@@ -481,112 +515,117 @@ async function applyProductFilters() {
         return;
     }
 
-    const maxPriceForQuery = typeof activePriceMax === "number" ? activePriceMax : null;
+    await loadProductsPage(1, false);
+}
 
-    // PERF: لو نفس تركيبة الفلاتر (تصنيف + سعر + بحث) اتسألت قبل كده في
-    // آخر 60 ثانية في نفس التاب، بنرجّع النتيجة المخزّنة من غير ما نضرب
-    // Firestore تاني. currentPageCursor بيتظبط من result.lastDoc المخزّن
-    // بالظبط زي مسار الشبكة العادي تحت، عشان loadNextProductsPage()
-    // (اللي بتستخدم currentPageCursor ده) تفضل شغالة صح سواء جت النتيجة
-    // من الكاش أو من الشبكة.
-    const cacheKey = _voltGetSearchCacheKey(activeCategory, maxPriceForQuery, q);
-    const cachedEntry = _searchQueryCache.get(cacheKey);
-    if (cachedEntry && (Date.now() - cachedEntry.timestamp) < SEARCH_CACHE_TTL_MS) {
-        currentPageCursor = cachedEntry.lastDoc;
-        currentPageHasMore = cachedEntry.hasMore;
-        renderProducts(cachedEntry.products);
-        saveProducts(cachedEntry.products);
-        return;
+async function loadProductsPage(page, withSkeleton) {
+    const seq = ++productsPageRequestSeq;
+    const filters = getActiveProductFilters();
+    const useMemory = !!(filters.searchPrefix && filters.maxPrice !== null);
+    const cacheKey = _voltGetSearchCacheKey(filters.category, filters.maxPrice, filters.searchPrefix);
+
+    if (page === 1 && !useMemory) {
+        const cachedEntry = _searchQueryCache.get(cacheKey);
+        if (cachedEntry && (Date.now() - cachedEntry.timestamp) < SEARCH_CACHE_TTL_MS) {
+            if (productsPageCursors.length < 2 && cachedEntry.lastDoc) {
+                productsPageCursors = [null, cachedEntry.lastDoc];
+            }
+            productsCountReady = true;
+            currentProductsPage = 1;
+            totalProductsCount = cachedEntry.total;
+            totalProductsPages = Math.max(1, Math.ceil(cachedEntry.total / PRODUCTS_PAGE_SIZE));
+            renderProducts(cachedEntry.products);
+            saveProducts(cachedEntry.products);
+            renderProductsPagination();
+            return;
+        }
     }
 
-    // PERF FIX (load-test audit): getProductsPageFromFirestore (config.js)
-    // no longer falls back to a silent full-collection scan on failure —
-    // it now throws instead (missing/broken composite index, most
-    // commonly). That's a deliberate fail-fast change on the config.js
-    // side, but it means this call must be guarded here: without this
-    // try/catch, an uncaught rejection at this line would break product
-    // rendering for every visitor the moment the index is unavailable,
-    // instead of the old (slow but non-breaking) full-scan degradation.
-    // This does not change the success path at all — only what happens
-    // if the call rejects.
-    let result;
+    if (withSkeleton) renderProductSkeletons(8);
+    setProductsPaginationBusy(true);
+
+    let products;
+    let total;
     try {
-        result = await window.voltFirebase.getProductsPage({
-            category: activeCategory,
-            maxPrice: maxPriceForQuery,
-            searchPrefix: q,
-            cursorDoc: null,
-            pageSize: 24
-        });
+        if (useMemory) {
+            if (productsMemoryList === null) {
+                const all = await window.voltFirebase.getProductsPage({
+                    category: filters.category,
+                    maxPrice: null,
+                    searchPrefix: filters.searchPrefix,
+                    cursorDoc: null,
+                    pageSize: PRODUCTS_MEMORY_FETCH_LIMIT
+                });
+                if (seq !== productsPageRequestSeq) return;
+                productsMemoryList = all.products.filter(p => typeof p.price !== "number" || p.price <= filters.maxPrice);
+            }
+            total = productsMemoryList.length;
+            const start = (page - 1) * PRODUCTS_PAGE_SIZE;
+            products = productsMemoryList.slice(start, start + PRODUCTS_PAGE_SIZE);
+        } else {
+            const known = productsPageCursors.length - 1;
+            const startIndex = Math.min(page - 1, known);
+            const pagesToFetch = page - startIndex;
+
+            const countPromise = productsCountReady
+                ? Promise.resolve(totalProductsCount)
+                : window.voltFirebase.getProductsCount(filters);
+
+            const [result, countValue] = await Promise.all([
+                window.voltFirebase.getProductsPage({
+                    category: filters.category,
+                    maxPrice: filters.maxPrice,
+                    searchPrefix: filters.searchPrefix,
+                    cursorDoc: productsPageCursors[startIndex],
+                    pageSize: pagesToFetch * PRODUCTS_PAGE_SIZE
+                }),
+                countPromise
+            ]);
+            if (seq !== productsPageRequestSeq) return;
+
+            for (let i = 1; i <= pagesToFetch; i++) {
+                const chunk = result.docs.slice((i - 1) * PRODUCTS_PAGE_SIZE, i * PRODUCTS_PAGE_SIZE);
+                if (chunk.length === PRODUCTS_PAGE_SIZE) {
+                    productsPageCursors[startIndex + i] = chunk[PRODUCTS_PAGE_SIZE - 1];
+                }
+            }
+
+            total = countValue;
+            products = result.products.slice((pagesToFetch - 1) * PRODUCTS_PAGE_SIZE, pagesToFetch * PRODUCTS_PAGE_SIZE);
+        }
     } catch (err) {
-        console.error("applyProductFilters: فشل جلب صفحة المنتجات", err);
+        if (seq !== productsPageRequestSeq) return;
+        console.error("loadProductsPage: فشل جلب صفحة المنتجات", err);
         const c = document.getElementById("products");
         if (c) {
             c.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--muted);padding:40px;">⚠️ تعذر تحميل المنتجات حالياً. حاول تحديث الصفحة.</p>`;
         }
+        setProductsPaginationBusy(false);
         return;
     }
 
-    currentPageCursor = result.lastDoc;
-    currentPageHasMore = result.hasMore;
+    currentProductsPage = page;
+    totalProductsCount = total;
+    productsCountReady = true;
+    totalProductsPages = Math.max(1, Math.ceil(total / PRODUCTS_PAGE_SIZE));
 
-    _voltCacheSearchResult(cacheKey, { products: result.products, lastDoc: result.lastDoc, hasMore: result.hasMore, timestamp: Date.now() });
-
-    renderProducts(result.products);
-    saveProducts(result.products);
-}
-
-// FIX (pagination): تحميل الصفحة الجاية أثناء الـ scroll — بتضيف كروت
-// جديدة تحت الموجودين (appendProductCards)، متمسحش ولا تعيد رندر اللي
-// اتحمّل قبل كده. isLoadingNextPage بيمنع تحميل مزدوج لو العميل عمل
-// scroll سريع قبل ما الصفحة السابقة تخلص تحميل.
-async function loadNextProductsPage() {
-    if (isLoadingNextPage || !currentPageHasMore) return;
-    isLoadingNextPage = true;
-    showInfiniteScrollLoader(true);
-
-    const inp = document.getElementById("searchInput");
-    const q = inp ? inp.value.toLowerCase().trim() : "";
-
-    if (!window.voltFirebase || typeof window.voltFirebase.getProductsPage !== "function") {
-        showInfiniteScrollLoader(false);
-        isLoadingNextPage = false;
+    if (page > totalProductsPages) {
+        await loadProductsPage(totalProductsPages, withSkeleton);
         return;
     }
 
-    // PERF FIX (load-test audit): same reasoning as the try/catch added to
-    // applyProductFilters() above — getProductsPageFromFirestore now
-    // throws on failure instead of silently falling back to a full scan.
-    // Guarded here so a failed infinite-scroll page load surfaces a toast
-    // and simply stops loading further pages, rather than throwing an
-    // uncaught rejection out of the IntersectionObserver callback.
-    let result;
-    try {
-        result = await window.voltFirebase.getProductsPage({
-            category: activeCategory,
-            maxPrice: typeof activePriceMax === "number" ? activePriceMax : null,
-            searchPrefix: q,
-            cursorDoc: currentPageCursor,
-            pageSize: 24
+    if (page === 1 && !useMemory) {
+        _voltCacheSearchResult(cacheKey, {
+            products,
+            lastDoc: productsPageCursors[1] || null,
+            total,
+            timestamp: Date.now()
         });
-    } catch (err) {
-        console.error("loadNextProductsPage: فشل جلب الصفحة التالية", err);
-        if (typeof showToast === "function") {
-            showToast("⚠️ تعذر تحميل المزيد من المنتجات، حاول مرة أخرى", "warn");
-        }
-        showInfiniteScrollLoader(false);
-        isLoadingNextPage = false;
-        return;
     }
 
-    currentPageCursor = result.lastDoc;
-    currentPageHasMore = result.hasMore;
-
-    appendProductCards(result.products);
-    saveProducts(result.products);
-
-    showInfiniteScrollLoader(false);
-    isLoadingNextPage = false;
+    renderProducts(products);
+    saveProducts(products);
+    renderProductsPagination();
 }
 
 function setupFilters() {
@@ -1907,7 +1946,7 @@ async function processFinalOrder(method) {
     const safeMethod = method === "cash" || method === "pending-deposit" || method === "instapay" ? method : "instapay";
     const methodText = safeMethod === "cash" ? "كاش عند الاستلام" : (safeMethod === "pending-deposit" ? "كاش (بانتظار تحويل الديبوزت)" : "إنستاباي كامل");
     const comment = document.getElementById("orderComment") ? document.getElementById("orderComment").value.trim().slice(0, 1000) : "";
-       const appliedCode = typeof window.getCurrentPromoCode === "function" ? window.getCurrentPromoCode() : "";
+    const appliedCode = typeof window.getCurrentPromoCode === "function" ? window.getCurrentPromoCode() : "";
 
     const qtyMap = new Map();
     for (const item of cart) {
@@ -2425,11 +2464,7 @@ function initLightning() {
     resize();
     window.addEventListener('resize', resize);
     let timer = 0;
-    let rafId = 0;
-    let active = true;
     const loop = () => {
-        rafId = 0;
-        if (!active) return;
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         if (Math.random() < 0.02 && timer <= 0) timer = 8;
         if (timer > 0) {
@@ -2437,25 +2472,8 @@ function initLightning() {
             let x = Math.random() * canvas.width, y = 0; ctx.moveTo(x, y);
             while (y < canvas.height) { x += Math.random() * 40 - 20; y += Math.random() * 30; ctx.lineTo(x, y); }
             ctx.stroke(); timer--;
-        }
-        rafId = requestAnimationFrame(loop);
-    };
-    const start = () => {
-        active = true;
-        if (!rafId) rafId = requestAnimationFrame(loop);
-    };
-    const stop = () => {
-        active = false;
-        if (rafId) {
-            cancelAnimationFrame(rafId);
-            rafId = 0;
-        }
-    };
-    start();
-    document.addEventListener("visibilitychange", () => {
-        if (document.visibilityState === "hidden") stop();
-        else start();
-    });
+        } requestAnimationFrame(loop);
+    }; loop();
 }
 // PERF: كانت querySelectorAll(".glow-card") بتتنفذ جوه mousemove handler
 // نفسه — mousemove بيطلق عشرات المرات في الثانية، وكل مرة كانت بتعمل full
@@ -3269,4 +3287,3 @@ window.deletePromoCode = async function (code) {
 // /functions/v1/validate-promo instead of validating client-side. That
 // Edge Function still needs to exist in your Supabase project; see the
 // TODO on the cart total calculation below for the matching gap on the
-// pricing side.
