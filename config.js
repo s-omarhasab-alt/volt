@@ -34,7 +34,10 @@ import {
     where,
     limit,
     orderBy,
-    startAfter
+    startAfter,
+    writeBatch,
+    increment,
+    Timestamp
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 // 🆕 استدعاء خدمة تسجيل الدخول (Authentication)
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
@@ -414,10 +417,226 @@ async function saveUserProfileToFirestore(uid, profile) {
     }
 }
 
+// ==========================================================================
+// إنشاء الأوردر مباشرة في Firestore (بدون Cloud Functions — خطة Spark).
+//
+// الأمان هنا مفروض بواسطة firestore.rules (isValidNewOrder): الـ rules
+// بتقارن كل سعر واسم وكمية بمستند المنتج الحقيقي، وبتعيد حساب المجموع
+// والعربون والحالة، وبتربط بيانات العميل بمستند حسابه. هذه الدالة تبني
+// المستند بحيث يطابق تلك الشروط حرفياً — أي تعديل هنا لازم يقابله تعديل
+// في الـ rules والعكس.
+//
+// معرّف المستند = "<uid>__<idempotencyKey>"، فإعادة الإرسال بنفس المفتاح
+// لا تنشئ أوردر ثانياً (تتحول لـ update والـ rules تمنعها على العميل).
+// ==========================================================================
+const VOLT_ORDER_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const VOLT_MAX_ORDER_LINES = 5;        // حد Firestore Rules: 10 قراءات لكل كتابة
+const VOLT_CASH_DEPOSIT_THRESHOLD = 1000;
+const VOLT_DEPOSIT_RATE = 0.3;
+
+function voltGenerateOrderId() {
+    const buf = crypto.getRandomValues(new Uint8Array(8));
+    let s = "";
+    for (const b of buf) s += VOLT_ORDER_ALPHABET[b % VOLT_ORDER_ALPHABET.length];
+    return `VOLT-${s}`;
+}
+
+function voltRound2(n) {
+    return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
+// ==========================================================================
+// أكواد الخصم بدون Cloud Functions (خطة Spark)
+//
+// voltEvaluatePromo() هي نفس منطق promoDiscountFor() / isPromoDiscountValid()
+// في firestore.rules بالظبط. الـ rules هي المرجع الأمني؛ هذه الدالة تعكسها
+// عشان العميل يشوف نفس الخصم اللي هتقبله الـ rules. أي تعديل هنا لازم
+// يقابله تعديل في الـ rules والعكس.
+//
+// ملاحظة: تاريخ الانتهاء لازم يكون Timestamp. أي قيمة نصية قديمة بتتعامل
+// كمنتهية/غير صالحة (الـ rules مش بتقدر تقرأ نص ISO)، وبتتحول لـ Timestamp
+// تلقائياً أول ما الأدمن يحفظ الكود من اللوحة.
+// ==========================================================================
+function voltNormalizePromoCode(raw) {
+    if (typeof raw !== "string") return "";
+    const code = raw.trim().toUpperCase();
+    return /^[A-Z0-9_-]{1,32}$/.test(code) ? code : "";
+}
+
+function voltEvaluatePromo(promo, subtotal, now) {
+    const invalid = { ok: false, reason: "invalid" };
+    if (!promo || promo.status !== "active") return invalid;
+
+    const type = promo.type;
+    if (type !== "percentage" && type !== "fixed" && type !== "free_shipping") return invalid;
+
+    const exp = promo.expiresAt;
+    if (exp !== undefined && exp !== null) {
+        if (typeof exp.toDate !== "function") return invalid;
+        if (exp.toDate().getTime() <= now.getTime()) return { ok: false, reason: "expired" };
+    }
+
+    const maxUses = promo.maxUses;
+    if (maxUses !== undefined && maxUses !== null) {
+        if ((Number(promo.usedCount) || 0) >= Number(maxUses)) return invalid;
+    }
+
+    if (subtotal < (Number(promo.minOrder) || 0)) return { ok: false, reason: "min_order" };
+
+    let discount = 0;
+    if (type === "percentage") {
+        discount = subtotal * ((Number(promo.percentOff) || 0) / 100);
+        const cap = Number(promo.maxDiscount) || 0;
+        if (cap > 0 && discount > cap) discount = cap;
+    } else if (type === "fixed") {
+        discount = Number(promo.fixedAmount) || 0;
+    }
+    if (discount > subtotal) discount = subtotal;
+    if (discount < 0) discount = 0;
+    return { ok: true, discount: voltRound2(discount) };
+}
+
 async function createSecureOrder(payload) {
-    const callable = httpsCallable(functions, "createSecureOrder");
-    const res = await callable(payload);
-    return res && res.data ? res.data : null;
+    const authUser = auth.currentUser;
+    if (!authUser) throw new Error("يجب تسجيل الدخول أولاً");
+
+    const items = Array.isArray(payload && payload.items) ? payload.items : [];
+    if (items.length < 1) throw new Error("السلة فارغة");
+    if (items.length > VOLT_MAX_ORDER_LINES) {
+        throw new Error("الحد الأقصى 5 منتجات مختلفة في الطلب الواحد، قسّم طلبك على مرتين");
+    }
+
+    const key = String(payload.idempotencyKey || "");
+    if (!/^[A-Za-z0-9_-]{16,128}$/.test(key)) throw new Error("مفتاح الطلب غير صالح");
+
+    // بيانات العميل من حسابه هو (مش من الصفحة). القيم بتتخزن كما هي بدون
+    // trim() لأن الـ rules بتقارنها بمستند المستخدم بالتساوي الحرفي.
+    const userSnap = await getDoc(doc(db, "users", authUser.uid));
+    if (!userSnap.exists()) throw new Error("بيانات حسابك غير مكتملة، سجّل الدخول مرة أخرى");
+    const u = userSnap.data();
+    if (u.role === "admin") throw new Error("حساب الإدارة لا يمكنه الشراء");
+
+    const customer = {
+        name: String(u.name || ""),
+        phone: String(u.phone || u.idNum || ""),
+        address: String(u.address || ""),
+        code: String(u.code || "")
+    };
+    if (!customer.name.trim() || !customer.phone.trim() || !customer.address.trim()) {
+        throw new Error("يرجى استكمال بيانات حسابك (الاسم والهاتف والعنوان) قبل إتمام الطلب");
+    }
+
+    // الأسعار والمخزون من قاعدة البيانات، مش من الصفحة.
+    const seen = new Set();
+    for (const it of items) {
+        const pid = String((it && it.productId) == null ? "" : it.productId);
+        if (!pid || seen.has(pid)) throw new Error("محتوى الطلب غير صحيح");
+        seen.add(pid);
+    }
+    const snaps = await Promise.all(
+        items.map((it) => getDoc(doc(db, "products", String(it.productId))))
+    );
+
+    let subtotal = 0;
+    const lines = [];
+    items.forEach((it, i) => {
+        const qty = Number(it.quantity);
+        const snap = snaps[i];
+        if (!snap.exists()) throw new Error("أحد المنتجات لم يعد متاحاً في المتجر");
+        const p = snap.data();
+        const name = String(p.name || "");
+        if (typeof p.name !== "string" || !name ||
+            typeof p.price !== "number" || !Number.isFinite(p.price) || p.price < 0 ||
+            typeof p.stock !== "number" || !Number.isFinite(p.stock)) {
+            throw new Error(`المنتج "${name || "منتج"}" غير متاح للشراء حالياً`);
+        }
+        if (!Number.isInteger(qty) || qty < 1 || qty > 100) throw new Error("كمية غير صحيحة");
+        if (p.stock <= 0) throw new Error(`نفدت كمية المنتج "${name}"`);
+        if (p.stock < qty) throw new Error(`الكمية المتاحة من "${name}" هي ${p.stock} فقط`);
+
+        subtotal += p.price * qty;
+        lines.push({
+            productId: String(it.productId),
+            name,
+            emoji: (typeof p.emoji === "string" && !p.emoji.startsWith("https://")) ? p.emoji : "📦",
+            price: p.price,
+            quantity: qty
+        });
+    });
+    subtotal = voltRound2(subtotal);
+
+    // كود الخصم: بيتعاد التحقق منه من قاعدة البيانات على السعر الحقيقي،
+    // والـ rules بتعيد نفس الحساب وبترفض أي خصم مختلف.
+    let discount = 0;
+    let promoCode = null;
+    let promoRef = null;
+    if (payload.promoCode) {
+        promoCode = voltNormalizePromoCode(payload.promoCode);
+        if (!promoCode) throw new Error("كود الخصم غير صالح");
+        promoRef = doc(db, "promoCodes", promoCode);
+        let promoSnap;
+        try {
+            promoSnap = await getDoc(promoRef);
+        } catch (err) {
+            console.error("createSecureOrder: فشل قراءة كود الخصم", err);
+            throw new Error("تعذر التحقق من كود الخصم، حاول مرة أخرى");
+        }
+        const evaluation = voltEvaluatePromo(promoSnap.exists() ? promoSnap.data() : null, subtotal, new Date());
+        if (!evaluation.ok) {
+            throw new Error("كود الخصم لم يعد صالحاً — أعد تحميل الصفحة وأعد المحاولة بدونه");
+        }
+        discount = evaluation.discount;
+    }
+    const total = voltRound2(Math.max(0, subtotal - discount));
+    const method = (payload.method === "cash" && total > VOLT_CASH_DEPOSIT_THRESHOLD)
+        ? "pending-deposit" : payload.method;
+    if (!["cash", "pending-deposit", "instapay"].includes(method)) {
+        throw new Error("طريقة الدفع غير صحيحة");
+    }
+
+    const now = new Date();
+    const orderId = voltGenerateOrderId();
+    const firestoreId = `${authUser.uid}__${key}`;
+    const orderDoc = {
+        orderId,
+        uid: authUser.uid,
+        customer,
+        items: lines,
+        subtotal,
+        discount,
+        promoCode,
+        total,
+        method,
+        paymentStatus: method === "cash" ? "cod" : "unpaid",
+        depositRequired: method === "pending-deposit" ? Math.ceil(total * VOLT_DEPOSIT_RATE) : 0,
+        status: method === "pending-deposit" ? "معلق بانتظار العربون" : "قيد المراجعة",
+        comment: String(payload.comment || "").trim().slice(0, 1000),
+        date: now.toLocaleString("ar-EG", { timeZone: "Africa/Cairo" }),
+        createdAt: now.toISOString(),
+        archived: false
+    };
+
+    try {
+        const orderRef = doc(db, "orders", firestoreId);
+        if (promoRef) {
+            // الأوردر وعدّاد استخدام الكود في عملية واحدة ذرّية. الـ rules
+            // بتشترط الاتنين مع بعض (lastOrderDocId لازم يساوي معرّف الأوردر).
+            const batch = writeBatch(db);
+            batch.set(orderRef, orderDoc);
+            batch.update(promoRef, { usedCount: increment(1), lastOrderDocId: firestoreId });
+            await batch.commit();
+        } else {
+            await setDoc(orderRef, orderDoc);
+        }
+    } catch (err) {
+        console.error("createSecureOrder: فشل حفظ الأوردر", err);
+        if (err && err.code === "permission-denied") {
+            throw new Error("تعذر تسجيل الطلب، غالباً الأسعار أو الكميات أو كود الخصم اتغيروا. حدّث الصفحة وحاول تاني");
+        }
+        throw new Error("تعذر إرسال الطلب، تحقق من الإنترنت وحاول مرة أخرى");
+    }
+
+    return { orderId, firestoreId, total, method };
 }
 
 async function saveOrderToFirestore() {
@@ -497,9 +716,10 @@ async function deleteOrderFromFirestore(orderId) {
 
 async function deletePromoCodeFromFirestore(codeName) {
     try {
-        const callable = httpsCallable(functions, "deletePromoCode");
-        const res = await callable({ code: String(codeName || "") });
-        return !!(res && res.data && res.data.success);
+        const code = voltNormalizePromoCode(codeName);
+        if (!code) return false;
+        await deleteDoc(doc(db, "promoCodes", code)); // الـ rules: أدمن فقط
+        return true;
     } catch (err) {
         console.error("deletePromoCodeFromFirestore: فشل حذف كود الخصم", err);
         return false;
@@ -520,9 +740,15 @@ async function getAllPromoCodesFromFirestore() {
 
 async function validatePromoCodeInFirestore(code, cartTotal) {
     try {
-        const callable = httpsCallable(functions, "validatePromoCode");
-        const res = await callable({ code: String(code || ""), cartTotal: Number(cartTotal) });
-        return res && res.data ? res.data : { valid: false, reason: "error" };
+        if (!auth.currentUser) return { valid: false, reason: "error" };
+        const normalized = voltNormalizePromoCode(code);
+        const total = Number(cartTotal);
+        if (!normalized || !Number.isFinite(total) || total < 0) return { valid: false, reason: "invalid" };
+
+        const snap = await getDoc(doc(db, "promoCodes", normalized));
+        const evaluation = voltEvaluatePromo(snap.exists() ? snap.data() : null, voltRound2(total), new Date());
+        if (!evaluation.ok) return { valid: false, reason: evaluation.reason };
+        return { valid: true, discount_amount: evaluation.discount, code: normalized };
     } catch (err) {
         console.error("validatePromoCodeInFirestore: فشل التحقق", err);
         return { valid: false, reason: "error" };
@@ -665,11 +891,82 @@ async function deleteUserAccountSecure(uid) {
         return false;
     }
 }
+function voltLooseNumber(v) {
+    if (typeof v === "number") return Number.isFinite(v) ? v : 0;
+    const n = parseFloat(String(v == null ? "" : v).replace(/[^\d.]/g, ""));
+    return Number.isFinite(n) ? n : 0;
+}
+
+// يرجع null (بدون انتهاء) أو Timestamp، أو undefined لو القيمة غير صالحة.
+function voltToPromoTimestamp(v) {
+    if (v === undefined || v === null || v === "") return null;
+    if (typeof v.toDate === "function") return v;
+    const d = new Date(v);
+    return Number.isNaN(d.getTime()) ? undefined : Timestamp.fromDate(d);
+}
+
+// تطبيع وتحقق مطابق لـ isValidPromo() في firestore.rules. usedCount لا يُرسل
+// أبداً من هنا للأكواد الموجودة (merge بيحافظ على قيمته).
 async function savePromoCodeToFirestore(codeData) {
     try {
-        const callable = httpsCallable(functions, "savePromoCode");
-        const res = await callable(codeData);
-        return !!(res && res.data && res.data.success);
+        const authUser = auth.currentUser;
+        if (!authUser) return false;
+
+        const data = codeData || {};
+        const code = voltNormalizePromoCode(data.code);
+        if (!code) throw new Error("كود الخصم غير صالح");
+        const type = data.type;
+        if (!["percentage", "fixed", "free_shipping"].includes(type)) throw new Error("نوع الخصم غير صحيح");
+        if (data.status !== "active" && data.status !== "inactive") throw new Error("حالة الكود غير صحيحة");
+
+        const percentOff = type === "percentage"
+            ? (Number(data.percentOff) > 0 ? Number(data.percentOff) : voltLooseNumber(data.value)) : 0;
+        const fixedAmount = type === "fixed"
+            ? (Number(data.fixedAmount) > 0 ? Number(data.fixedAmount) : voltLooseNumber(data.value)) : 0;
+        if (type === "percentage" && !(percentOff > 0 && percentOff <= 100)) throw new Error("نسبة الخصم يجب أن تكون بين 1 و100");
+        if (type === "fixed" && !(fixedAmount > 0 && fixedAmount <= 1000000)) throw new Error("قيمة الخصم غير صحيحة");
+
+        const minOrder = Number(data.minOrder) || 0;
+        const maxDiscount = Number(data.maxDiscount) || 0;
+        if (minOrder < 0 || minOrder > 10000000 || maxDiscount < 0 || maxDiscount > 10000000) {
+            throw new Error("البيانات المرسلة خارج النطاق المسموح");
+        }
+
+        let maxUses = null;
+        if (data.maxUses !== undefined && data.maxUses !== null && data.maxUses !== "") {
+            maxUses = Number(data.maxUses);
+            if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 1000000000) throw new Error("الحد الأقصى للاستخدام غير صالح");
+        }
+
+        const expiresAt = voltToPromoTimestamp(data.expiresAt);
+        if (expiresAt === undefined) throw new Error("تاريخ الانتهاء غير صالح");
+
+        const ref = doc(db, "promoCodes", code);
+        const existing = await getDoc(ref);
+        const nowIso = new Date().toISOString();
+
+        const payload = {
+            code,
+            type,
+            status: data.status,
+            value: typeof data.value === "string" ? data.value.slice(0, 40) : "",
+            percentOff,
+            fixedAmount,
+            shippingDiscount: type === "free_shipping",
+            minOrder,
+            maxUses,
+            maxDiscount,
+            expiresAt,
+            updatedAt: nowIso,
+            updatedBy: authUser.uid
+        };
+        if (!existing.exists()) {
+            payload.usedCount = 0;
+            payload.createdAt = nowIso;
+        }
+
+        await setDoc(ref, payload, { merge: true });
+        return true;
     } catch (err) {
         console.error("savePromoCodeToFirestore: فشل حفظ كود الخصم", err);
         return false;
