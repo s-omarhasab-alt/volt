@@ -2670,6 +2670,10 @@ background-color: var(--green);
     scroll-margin-top: 84px;
 }
 
+/* PAGINATION ACCENT: Electric Cyan #00D4FF to match Filter V2 (--vf-accent, defined on
+   .vf-layout in volt-filter.css; the fallback keeps it correct if pagination renders
+   outside .vf-layout). Derived tints are hardcoded on purpose: hover #00B8DD,
+   done-node bg #062A33, glows rgba(0, 212, 255, x). Keep in sync if the accent changes. */
 .volt-pagination {
     width: min(760px, calc(100% - 32px));
     margin: 0 auto 60px;
@@ -2733,21 +2737,21 @@ background-color: var(--green);
 }
 
 .volt-pg-node:hover {
-    border-color: var(--green);
-    color: var(--green);
+    border-color: var(--vf-accent, #00D4FF);
+    color: var(--vf-accent, #00D4FF);
 }
 
 .volt-pg-node.is-done {
-    background: #0e2a17;
-    border-color: var(--green);
-    color: var(--green);
+    background: #062A33;
+    border-color: var(--vf-accent, #00D4FF);
+    color: var(--vf-accent, #00D4FF);
 }
 
 .volt-pg-node.is-current {
-    background: var(--green);
-    border-color: var(--green);
+    background: var(--vf-accent, #00D4FF);
+    border-color: var(--vf-accent, #00D4FF);
     color: #000;
-    box-shadow: 0 0 14px 2px rgba(29, 185, 84, .55);
+    box-shadow: 0 0 14px 2px rgba(0, 212, 255, .55);
 }
 
 .volt-pg-line {
@@ -2758,8 +2762,8 @@ background-color: var(--green);
 }
 
 .volt-pg-line.is-done {
-    background: var(--green);
-    box-shadow: 0 0 6px rgba(29, 185, 84, .55);
+    background: var(--vf-accent, #00D4FF);
+    box-shadow: 0 0 6px rgba(0, 212, 255, .55);
 }
 
 .volt-pg-gap {
@@ -2787,22 +2791,22 @@ background-color: var(--green);
 
 .volt-pg-prev {
     background: transparent;
-    border: 1.5px solid var(--green);
-    color: var(--green);
+    border: 1.5px solid var(--vf-accent, #00D4FF);
+    color: var(--vf-accent, #00D4FF);
 }
 
 .volt-pg-prev:hover:not(:disabled) {
-    background: rgba(29, 185, 84, .1);
+    background: rgba(0, 212, 255, .1);
 }
 
 .volt-pg-next {
-    background: var(--green);
-    border: 1.5px solid var(--green);
+    background: var(--vf-accent, #00D4FF);
+    border: 1.5px solid var(--vf-accent, #00D4FF);
     color: #000;
 }
 
 .volt-pg-next:hover:not(:disabled) {
-    background: var(--green2);
+    background: #00B8DD;
 }
 
 .volt-pg-btn:disabled {
@@ -2814,7 +2818,7 @@ background-color: var(--green);
 
 .volt-pg-node:focus-visible,
 .volt-pg-btn:focus-visible {
-    outline: 2px solid var(--green);
+    outline: 2px solid var(--vf-accent, #00D4FF);
     outline-offset: 2px;
 }
 
@@ -2830,23 +2834,23 @@ background-color: var(--green);
 
 @keyframes voltPgPulse {
     0%, 100% {
-        box-shadow: 0 0 0 0 rgba(29, 185, 84, .6), 0 0 10px 1px rgba(29, 185, 84, .4);
+        box-shadow: 0 0 0 0 rgba(0, 212, 255, .6), 0 0 10px 1px rgba(0, 212, 255, .4);
         transform: scale(1);
     }
 
     50% {
-        box-shadow: 0 0 0 8px rgba(29, 185, 84, 0), 0 0 24px 6px rgba(29, 185, 84, .65);
+        box-shadow: 0 0 0 8px rgba(0, 212, 255, 0), 0 0 24px 6px rgba(0, 212, 255, .65);
         transform: scale(1.07);
     }
 }
 
 @keyframes voltPgNextPulse {
     0%, 100% {
-        box-shadow: 0 0 0 0 rgba(29, 185, 84, .45);
+        box-shadow: 0 0 0 0 rgba(0, 212, 255, .45);
     }
 
     50% {
-        box-shadow: 0 0 16px 3px rgba(29, 185, 84, .5);
+        box-shadow: 0 0 16px 3px rgba(0, 212, 255, .5);
     }
 }
 
