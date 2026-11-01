@@ -1907,7 +1907,7 @@ async function processFinalOrder(method) {
     const safeMethod = method === "cash" || method === "pending-deposit" || method === "instapay" ? method : "instapay";
     const methodText = safeMethod === "cash" ? "كاش عند الاستلام" : (safeMethod === "pending-deposit" ? "كاش (بانتظار تحويل الديبوزت)" : "إنستاباي كامل");
     const comment = document.getElementById("orderComment") ? document.getElementById("orderComment").value.trim().slice(0, 1000) : "";
-    const appliedCode = typeof window.getCurrentPromoCode === "function" ? window.getCurrentPromoCode() : "";
+       const appliedCode = typeof window.getCurrentPromoCode === "function" ? window.getCurrentPromoCode() : "";
 
     const qtyMap = new Map();
     for (const item of cart) {
